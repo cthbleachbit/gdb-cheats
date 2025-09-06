@@ -122,11 +122,10 @@ class LockedValueWatchpoint(gdb.Breakpoint):
         super().__init__(variable.format_spec(), gdb.BP_WATCHPOINT, gdb.WP_WRITE, True)
         self.variable = variable
         self.value = value
-        self.buffer = value.to_bytes(length=variable.value_type.length(), byteorder="little")
 
     def stop(self):
         """Upon trigger force value overwrite"""
-        self.variable.set(self.buffer)
+        self.variable.set(self.value)
         _logger.info(f"Watchpoint {self.variable.name}={self.value} fired.")
 
     def get_variable(self) -> VariableDefinition:
