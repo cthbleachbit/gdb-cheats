@@ -1,4 +1,5 @@
 #/usr/bin/env make -f
+# SPDX-License-Identifier: GPL-3.0
 
 all: bin_mock_program bin_mock_program_debug
 

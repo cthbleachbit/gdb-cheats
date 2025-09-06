@@ -1,3 +1,9 @@
+/* SPDX-License-Identifier: GPL-3.0 */
+/*
+ * Mock program to test cheat scripts with.
+ * Decrement two counters (one on stack one on heap) every time enter is pressed.
+ */
+
 #include <thread>
 #include <future>
 #include "mock_program.h"
@@ -10,12 +16,7 @@
 
 int main(int argc, char* argv[]) {
 	using ValueT = uint32_t;
-	/*
-	 * Notable variables:
-	 * THREAD_COUNT_BG = background thread counts
-	 * VALUE_HEAP_FG = foreground heap value initializer
-	 * VALUE_STACK_FG = foreground stack value initializer
-	 */
+
 	size_t heap_offset = 1;
 	size_t stack_offset = 1;
 	size_t thread_count_bg = 16;

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0 */
+
 #ifndef GDB_CHEATS_MOCK_PROGRAM_H
 #define GDB_CHEATS_MOCK_PROGRAM_H
 
