@@ -206,13 +206,16 @@ class MemorySegment:
 
         return MemorySegment(int(start, 16), int(end, 16), permissions, int(offset, 16), device, int(inode), path)
 
-    def is_file_backed(self) -> bool:
+    @property
+    def file_backed(self) -> bool:
         return self.pathname.startswith("/") and self.offset > 0
 
-    def is_writable(self) -> bool:
+    @property
+    def writable(self) -> bool:
         return self.permissions.w
 
-    def is_readable(self) -> bool:
+    @property
+    def readable(self) -> bool:
         return self.permissions.r
 
     def __len__(self) -> int:
@@ -449,7 +452,7 @@ class CheatSession:
                 process_segments.append(segment)
 
         eligible_segments = [segment for segment in process_segments if
-                                  not segment.is_file_backed() and segment.is_writable() and segment.is_readable()]
+                             not segment.file_backed and segment.writable and segment.readable]
 
         _logger.info("Found {} segments.".format(len(process_segments)))
         _logger.info("Found {} segments containing runtime data.".format(len(eligible_segments)))
@@ -725,6 +728,7 @@ class CheatSearchCreate(gdb.Command):
             return
 
         _session.current_search = SearchSession(value_type)
+        _session.current_search.max_print_limit = 100
 
 
 class CheatSearchPopulate(gdb.Command):
@@ -753,7 +757,7 @@ class CheatSearchPopulate(gdb.Command):
 
         argv = gdb.string_to_argv(argument)
         if len(argv) != 1:
-            _logger.error("Invalid number of arguments. Pass exactly 1 argument for value to search.")
+            _logger.error("Usage: cheat_search_populate <initial value to search>")
             return
 
         target_value = int(argv[0], 0)
@@ -787,8 +791,11 @@ class CheatSearchNarrow(gdb.Command):
         argv = gdb.string_to_argv(argument)
         if len(argv) < 1:
             target_value = None
-        else:
+        elif len(argv) == 1:
             target_value = int(argv[0], 0)
+        else:
+            _logger.error(f"Too many arguments. Usage: cheat_search_narrow <value to search>")
+            return
 
         _session.current_search.narrow(target_value)
 
@@ -901,7 +908,7 @@ class CheatLockCreate(gdb.Command):
             return
 
         argv = gdb.string_to_argv(argument)
-        if len(argv) < 2:
+        if len(argv) != 2:
             _logger.error(
                 "Invalid number of arguments. Pass exactly 2 argument for variable def index and lock-in value.")
             return
