@@ -511,9 +511,69 @@ class CheatSession:
             print(f"{active} 0x{variable.address:016x} {variable.name:<20} {watchpoint.value:>16}")
 
 
-# ============================= GDB Commands ===================================
+# Global State ================================================================
 
 _session: Optional[CheatSession] = None
+
+
+# GDB Prefix Commands =========================================================
+
+class PrefixCheat(gdb.Command):
+    """
+    Cheat engine top level prefix
+
+    Usage: cheat <subcommand>
+    """
+
+    def __init__(self):
+        super(PrefixCheat, self).__init__("cheat", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+
+
+class PrefixCheatSession(gdb.Command):
+    """
+    Manage session wide settings
+
+    Usage: cheat session <subcommand>
+    """
+
+    def __init__(self):
+        super(PrefixCheatSession, self).__init__("cheat session", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+
+
+class PrefixCheatSearch(gdb.Command):
+    """
+    Control memory search
+
+    Usage: cheat search <subcommand>
+    """
+
+    def __init__(self):
+        super(PrefixCheatSearch, self).__init__("cheat search", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+
+
+class PrefixCheatLock(gdb.Command):
+    """
+    Control memory content locking at specific addresses
+
+    Usage: cheat session <subcommand>
+    """
+
+    def __init__(self):
+        super(PrefixCheatLock, self).__init__("cheat lock", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+
+
+class PrefixCheatVariable(gdb.Command):
+    """
+    Manage variable definitions
+
+    Usage: cheat variable <subcommand>
+    """
+
+    def __init__(self):
+        super(PrefixCheatVariable, self).__init__("cheat variable", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+
+
+# GDB Commands ================================================================
 
 
 class CheatSessionCreate(gdb.Command):
@@ -525,7 +585,7 @@ class CheatSessionCreate(gdb.Command):
 
     def __init__(self):
         super(CheatSessionCreate, self).__init__(
-            "cheat_session_create",
+            "cheat session create",
             gdb.COMMAND_USER,
             gdb.COMPLETE_NONE,
         )
@@ -559,7 +619,7 @@ class CheatSessionSummary(gdb.Command):
 
     def __init__(self):
         super(CheatSessionSummary, self).__init__(
-            "cheat_session_summary",
+            "cheat session summary",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -586,7 +646,7 @@ class CheatSessionDiscoverSegments(gdb.Command):
 
     def __init__(self):
         super(CheatSessionDiscoverSegments, self).__init__(
-            "cheat_session_discover_segments",
+            "cheat session discover_segments",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -602,13 +662,13 @@ class CheatSessionDiscoverSegments(gdb.Command):
 
 class CheatSessionDelete(gdb.Command):
     """
-    Clean up current cheat session.
+    Clean up current cheat session. Remove all variables and watchpoints.
     Usage: cheat_delete_session
     """
 
     def __init__(self):
         super(CheatSessionDelete, self).__init__(
-            "cheat_session_delete",
+            "cheat session delete",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -631,7 +691,7 @@ class CheatSearchCreate(gdb.Command):
 
     def __init__(self):
         super(CheatSearchCreate, self).__init__(
-            "cheat_search_create",
+            "cheat search create",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -666,7 +726,7 @@ class CheatSearchPopulate(gdb.Command):
 
     def __init__(self):
         super(CheatSearchPopulate, self).__init__(
-            "cheat_search_populate",
+            "cheat search populate",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -699,7 +759,7 @@ class CheatSearchNarrow(gdb.Command):
 
     def __init__(self):
         super(CheatSearchNarrow, self).__init__(
-            "cheat_search_narrow",
+            "cheat search narrow",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -732,7 +792,7 @@ class CheatSearchSummary(gdb.Command):
 
     def __init__(self):
         super(CheatSearchSummary, self).__init__(
-            "cheat_search_summary",
+            "cheat search summary",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -761,7 +821,7 @@ class CheatSearchDefineVariable(gdb.Command):
 
     def __init__(self):
         super(CheatSearchDefineVariable, self).__init__(
-            "cheat_search_define_variable",
+            "cheat search define_variable",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -795,7 +855,7 @@ class CheatSearchReset(gdb.Command):
 
     def __init__(self):
         super(CheatSearchReset, self).__init__(
-            "cheat_search_reset",
+            "cheat search reset",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -820,8 +880,8 @@ class CheatLockCreate(gdb.Command):
 
     def __init__(self):
         super(CheatLockCreate, self).__init__(
-            "cheat_lock_create",
-            gdb.COMMAND_DATA,
+            "cheat lock create",
+            gdb.COMMAND_TRACEPOINTS,
         )
 
     def invoke(self, argument: str, from_tty: bool) -> None:
@@ -860,8 +920,8 @@ class CheatLockEnable(gdb.Command):
 
     def __init__(self):
         super(CheatLockEnable, self).__init__(
-            "cheat_lock_enable",
-            gdb.COMMAND_DATA,
+            "cheat lock enable",
+            gdb.COMMAND_TRACEPOINTS,
         )
 
     def invoke(self, argument: str, from_tty: bool) -> None:
@@ -899,8 +959,8 @@ class CheatLockDisable(gdb.Command):
 
     def __init__(self):
         super(CheatLockDisable, self).__init__(
-            "cheat_lock_disable",
-            gdb.COMMAND_DATA,
+            "cheat lock disable",
+            gdb.COMMAND_TRACEPOINTS,
         )
 
     def invoke(self, argument: str, from_tty: bool) -> None:
@@ -938,8 +998,8 @@ class CheatLockDelete(gdb.Command):
 
     def __init__(self):
         super(CheatLockDelete, self).__init__(
-            "cheat_lock_delete",
-            gdb.COMMAND_DATA,
+            "cheat lock delete",
+            gdb.COMMAND_TRACEPOINTS,
         )
 
     def invoke(self, argument: str, from_tty: bool) -> None:
@@ -978,7 +1038,7 @@ class CheatVariableCreate(gdb.Command):
 
     def __init__(self):
         super(CheatVariableCreate, self).__init__(
-            "cheat_variable_create",
+            "cheat variable create",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -1017,7 +1077,7 @@ class CheatVariableSet(gdb.Command):
 
     def __init__(self):
         super(CheatVariableSet, self).__init__(
-            "cheat_variable_set",
+            "cheat variable set",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -1062,7 +1122,7 @@ class CheatVariableDelete(gdb.Command):
 
     def __init__(self):
         super(CheatVariableDelete, self).__init__(
-            "cheat_variable_delete",
+            "cheat variable delete",
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
@@ -1097,6 +1157,14 @@ class CheatVariableDelete(gdb.Command):
         _session.variables[index].valid = False
         _session.summarize_variables()
 
+
+# GDB Command registration ====================================================
+
+PrefixCheat()
+PrefixCheatSession()
+PrefixCheatSearch()
+PrefixCheatLock()
+PrefixCheatVariable()
 
 CheatSessionCreate()
 CheatSessionSummary()
