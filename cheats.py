@@ -592,7 +592,7 @@ class CheatSessionCreate(gdb.Command):
     """
     Create a new cheat session.
 
-    Usage: cheat_create_session
+    Usage: cheat session create
     """
 
     def __init__(self):
@@ -624,7 +624,7 @@ class CheatSessionSummary(gdb.Command):
     Print a summary of the current cheat session.
     This includes all variables and watchpoints defined in this cheat session and current search (if one is in progress).
 
-    Usage: cheat_summary_session
+    Usage: cheat session summary
     """
 
     SEARCH_STATE_PRINT_MAX = 100
@@ -650,32 +650,10 @@ class CheatSessionSummary(gdb.Command):
         CheatSearchSummary.summarize(from_tty)
 
 
-class CheatSessionDiscoverSegments(gdb.Command):
-    """
-    Rescan program segments as thread spawning / mmap may add/remove segments at any time.
-    Usage: cheat_session_discover_segments
-    """
-
-    def __init__(self):
-        super(CheatSessionDiscoverSegments, self).__init__(
-            "cheat session discover_segments",
-            gdb.COMMAND_DATA,
-            gdb.COMPLETE_NONE,
-        )
-
-    def invoke(self, argument: str, from_tty: bool) -> None:
-        global _session
-        if _session is None:
-            _logger.error("No cheat session found.")
-            return
-
-        _session.discover_segments()
-
-
 class CheatSessionDelete(gdb.Command):
     """
     Clean up current cheat session. Remove all variables and watchpoints.
-    Usage: cheat_delete_session
+    Usage: cheat session delete
     """
 
     def __init__(self):
@@ -698,7 +676,7 @@ class CheatSessionDelete(gdb.Command):
 class CheatSearchCreate(gdb.Command):
     """
     Start a new cheat search session.
-    Usage: cheat_search <target variable type>
+    Usage: cheat search create <target variable type>
     """
 
     def __init__(self):
@@ -734,7 +712,7 @@ class CheatSearchCreate(gdb.Command):
 class CheatSearchPopulate(gdb.Command):
     """
     Populate a cheat search session.
-    Usage: cheat_search_populate <initial value to search>
+    Usage: cheat search populate <initial value to search>
     """
 
     def __init__(self):
@@ -767,7 +745,7 @@ class CheatSearchPopulate(gdb.Command):
 class CheatSearchNarrow(gdb.Command):
     """
     Narrow down a cheat search session.
-    Usage: cheat_search_narrow <value to search>
+    Usage: cheat search narrow <value to search>
     """
 
     def __init__(self):
@@ -803,7 +781,7 @@ class CheatSearchNarrow(gdb.Command):
 class CheatSearchSummary(gdb.Command):
     """
     Print a summary of the current cheat session.
-    Usage: cheat_summary_session
+    Usage: cheat search summary
     """
 
     def __init__(self):
@@ -832,7 +810,7 @@ class CheatSearchSummary(gdb.Command):
 class CheatSearchDefineVariable(gdb.Command):
     """
     Define a cheat variable and add it to the global session state.
-    Usage: cheat_search_variable <variable name> [search result index, default 0]
+    Usage: cheat search define_variable <variable name> [search result index, default 0]
     """
 
     def __init__(self):
@@ -866,7 +844,7 @@ class CheatSearchDefineVariable(gdb.Command):
 class CheatSearchReset(gdb.Command):
     """
     Define a cheat variable and add it to the global session state.
-    Usage: cheat_search_reset <variable name>
+    Usage: cheat search reset <variable name>
     """
 
     def __init__(self):
@@ -891,7 +869,7 @@ class CheatSearchReset(gdb.Command):
 class CheatLockCreate(gdb.Command):
     """
     Create a new lock that locks a defined variable to a defined value.
-    Usage: cheat_lock_create <variable index> <locked value>
+    Usage: cheat lock create <variable index> <locked value>
     """
 
     def __init__(self):
@@ -931,7 +909,7 @@ class CheatLockCreate(gdb.Command):
 class CheatLockEnable(gdb.Command):
     """
     Enable a created lock on a defined variable.
-    Usage: cheat_lock_enable <variable index>
+    Usage: cheat lock enable <variable index>
     """
 
     def __init__(self):
@@ -970,7 +948,7 @@ class CheatLockEnable(gdb.Command):
 class CheatLockDisable(gdb.Command):
     """
     Enable a created lock on a defined variable.
-    Usage: cheat_lock_enable <variable index>
+    Usage: cheat lock enable <variable index>
     """
 
     def __init__(self):
@@ -1009,7 +987,7 @@ class CheatLockDisable(gdb.Command):
 class CheatLockDelete(gdb.Command):
     """
     Delete a created lock on a defined variable.
-    Usage: cheat_lock_delete <variable index>
+    Usage: cheat lock delete <variable index>
     """
 
     def __init__(self):
@@ -1049,7 +1027,7 @@ class CheatLockDelete(gdb.Command):
 class CheatVariableCreate(gdb.Command):
     """
     Manually define a new variable.
-    Usage: cheat_variable_create <name> <type> <address>
+    Usage: cheat variable create <name> <type> <address>
     """
 
     def __init__(self):
@@ -1088,7 +1066,7 @@ class CheatVariableCreate(gdb.Command):
 class CheatVariableSet(gdb.Command):
     """
     Set value for variable.
-    Usage: cheat_variable_set <index> <value>
+    Usage: cheat variable set <index> <value>
     """
 
     def __init__(self):
@@ -1133,7 +1111,7 @@ class CheatVariableSet(gdb.Command):
 class CheatVariableDelete(gdb.Command):
     """
     Delete variable.
-    Usage: cheat_variable_delete <index>
+    Usage: cheat variable delete <index>
     """
 
     def __init__(self):
@@ -1184,7 +1162,6 @@ PrefixCheatVariable()
 
 CheatSessionCreate()
 CheatSessionSummary()
-CheatSessionDiscoverSegments()
 CheatSessionDelete()
 CheatSearchCreate()
 CheatSearchPopulate()
