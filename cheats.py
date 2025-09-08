@@ -286,11 +286,19 @@ class SearchSession:
                     progress.update(search_end - search_start)
                     while True:
                         search_length = search_end - search_start
+                        if search_length <= 0:
+                            break
+
                         try:
                             search_result = self.inferior.search_memory(search_start, search_length, byte_pattern)
                         except gdb.MemoryError as e:
-                            _logger.error(f"Skipping unreadable segment {segment.start}-{segment.end}!", exc_info=e)
+                            _logger.error(f"Skipping unreadable segment {segment.start:016x}-{segment.end:016x}!", exc_info=e)
                             _logger.info("You may want to rediscover segments and try again.")
+                            continue
+                        except ValueError as e:
+                            _logger.error(f"Skipping segment {segment.start:016x}-{segment.end:016x}!", exc_info=e)
+                            continue
+
                         if search_result is None:
                             break
                         else:
@@ -452,7 +460,7 @@ class CheatSession:
                 process_segments.append(segment)
 
         eligible_segments = [segment for segment in process_segments if
-                             not segment.file_backed and segment.writable and segment.readable]
+                             not segment.file_backed and segment.writable and segment.readable and len(segment) > 0]
 
         _logger.info("Found {} segments.".format(len(process_segments)))
         _logger.info("Found {} segments containing runtime data.".format(len(eligible_segments)))
