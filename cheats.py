@@ -324,7 +324,7 @@ class SearchSession:
         target_byte_pattern = target_value.to_bytes(self.value_type.length_bytes, byteorder="little")
         _logger.info(f"Searching for byte pattern: {bytes_to_readable(target_byte_pattern)}")
 
-        remaining_candidates: Set[int] = set()
+        remaining_candidates: List[int] = []
         for candidate in tqdm.tqdm(self.pointer_candidates, desc="Narrowing down memory candidates", unit="items"):
             try:
                 current_pattern = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
@@ -335,7 +335,7 @@ class SearchSession:
 
             if current_pattern == target_byte_pattern:
                 _logger.debug(f"Keeping candidate 0x{candidate:016x}")
-                remaining_candidates.add(candidate)
+                remaining_candidates.append(candidate)
             else:
                 _logger.debug(f"Eliminating candidate 0x{candidate:016x}")
 
