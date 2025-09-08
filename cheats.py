@@ -640,8 +640,6 @@ class CommandCheatSessionSummary(gdb.Command):
     Usage: cheat session summary
     """
 
-    SEARCH_STATE_PRINT_MAX = 100
-
     def __init__(self):
         super(CommandCheatSessionSummary, self).__init__(
             "cheat session summary",
@@ -752,8 +750,12 @@ class CommandCheatSearchPopulate(gdb.Command):
             return
 
         target_value = int(argv[0], 0)
-        _session.current_search.populate(target_value)
 
+        try:
+            _session.current_search.populate(target_value)
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
+            return
 
 class CommandCheatSearchNarrow(gdb.Command):
     """
@@ -788,7 +790,11 @@ class CommandCheatSearchNarrow(gdb.Command):
             _logger.error(f"Too many arguments. Usage: cheat_search_narrow <value to search>")
             return
 
-        _session.current_search.narrow(target_value)
+        try:
+            _session.current_search.narrow(target_value)
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
+            return
 
 
 class CommandCheatSearchSummary(gdb.Command):
@@ -812,9 +818,10 @@ class CommandCheatSearchSummary(gdb.Command):
             return
 
         if _session.current_search is None:
-            print("No variable search in progress.")
-        else:
-            _session.current_search.summarize(from_tty)
+            _logger.error("No variable search in progress.")
+            return
+
+        _session.current_search.summarize(from_tty)
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         return CommandCheatSearchSummary.summarize(from_tty)
@@ -842,16 +849,22 @@ class CommandCheatSearchDefineVariable(gdb.Command):
             print("No variable search in progress.")
             return
 
+        # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) < 1:
             _logger.error("Usage: cheat_search_variable <variable name> [search result index, default 0]")
             return
 
-        variable = _session.current_search.define_variable(argv[0])
-        if variable is not None:
-            _session.variables.append(variable)
-            _logger.info(f"New variable defined at index = {len(_session.variables) - 1}.")
-            _session.summarize_variables()
+        # Actual work
+        try:
+            variable = _session.current_search.define_variable(argv[0])
+            if variable is not None:
+                _session.variables.append(variable)
+                _logger.info(f"New variable defined at index = {len(_session.variables) - 1}.")
+                _session.summarize_variables()
+        except gdb.error as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
+            return
 
 
 class CommandCheatSearchReset(gdb.Command):
@@ -898,6 +911,7 @@ class CommandCheatLockCreate(gdb.Command):
             _logger.error("No cheat session found.")
             return
 
+        # Parse and validate argument
         argv = gdb.string_to_argv(argument)
         if len(argv) != 2:
             _logger.error(
@@ -907,16 +921,21 @@ class CommandCheatLockCreate(gdb.Command):
         variable_index = int(argv[0], 0)
         locked_value = int(argv[1], 0)
 
-        if variable_index > len(_session.variables):
-            _logger.error("Invalid variable index.")
+        # Actual work
+        try:
+            if variable_index > len(_session.variables):
+                _logger.error("Invalid variable index.")
+                return
+            variable = _session.variables[variable_index]
+
+            if not variable.valid:
+                _logger.error("Invalid variable.")
+
+            _session.variable_lock_create(variable, locked_value)
+            _session.summarize_watchpoints()
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
             return
-        variable = _session.variables[variable_index]
-
-        if not variable.valid:
-            _logger.error("Invalid variable.")
-
-        _session.variable_lock_create(variable, locked_value)
-        _session.summarize_watchpoints()
 
 
 class CommandCheatLockEnable(gdb.Command):
@@ -938,6 +957,7 @@ class CommandCheatLockEnable(gdb.Command):
             _logger.error("No cheat session found.")
             return
 
+        # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) < 1:
             _logger.error(
@@ -946,16 +966,21 @@ class CommandCheatLockEnable(gdb.Command):
 
         variable_index = int(argv[0], 0)
 
-        if variable_index > len(_session.variables):
-            _logger.error("Invalid variable index.")
+        # Actual work
+        try:
+            if variable_index > len(_session.variables):
+                _logger.error("Invalid variable index.")
+                return
+            variable = _session.variables[variable_index]
+
+            if not variable.valid:
+                _logger.error("Invalid variable.")
+
+            _session.variable_lock_enable(variable)
+            _session.summarize_watchpoints()
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
             return
-        variable = _session.variables[variable_index]
-
-        if not variable.valid:
-            _logger.error("Invalid variable.")
-
-        _session.variable_lock_enable(variable)
-        _session.summarize_watchpoints()
 
 
 class CommandCheatLockDisable(gdb.Command):
@@ -977,6 +1002,7 @@ class CommandCheatLockDisable(gdb.Command):
             _logger.error("No cheat session found.")
             return
 
+        # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) < 1:
             _logger.error(
@@ -985,16 +1011,21 @@ class CommandCheatLockDisable(gdb.Command):
 
         variable_index = int(argv[0], 0)
 
-        if variable_index > len(_session.variables):
-            _logger.error("Invalid variable index.")
+        # Actual work:
+        try:
+            if variable_index > len(_session.variables):
+                _logger.error("Invalid variable index.")
+                return
+            variable = _session.variables[variable_index]
+
+            if not variable.valid:
+                _logger.error("Invalid variable.")
+
+            _session.variable_lock_disable(variable)
+            _session.summarize_watchpoints()
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
             return
-        variable = _session.variables[variable_index]
-
-        if not variable.valid:
-            _logger.error("Invalid variable.")
-
-        _session.variable_lock_disable(variable)
-        _session.summarize_watchpoints()
 
 
 class CommandCheatLockDelete(gdb.Command):
@@ -1016,6 +1047,7 @@ class CommandCheatLockDelete(gdb.Command):
             _logger.error("No cheat session found.")
             return
 
+        # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) < 1:
             _logger.error(
@@ -1025,16 +1057,21 @@ class CommandCheatLockDelete(gdb.Command):
 
         variable_index = int(argv[0], 0)
 
-        if variable_index > len(_session.variables):
-            _logger.error("Invalid variable index.")
+        # Actual work
+        try:
+            if variable_index > len(_session.variables):
+                _logger.error("Invalid variable index.")
+                return
+            variable = _session.variables[variable_index]
+
+            if not variable.valid:
+                _logger.error("Invalid variable.")
+
+            _session.variable_lock_delete(variable)
+            _session.summarize_watchpoints()
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
             return
-        variable = _session.variables[variable_index]
-
-        if not variable.valid:
-            _logger.error("Invalid variable.")
-
-        _session.variable_lock_delete(variable)
-        _session.summarize_watchpoints()
 
 
 class CommandCheatVariableCreate(gdb.Command):
@@ -1057,6 +1094,7 @@ class CommandCheatVariableCreate(gdb.Command):
             _logger.error("No cheat session found.")
             return
 
+        # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) != 3:
             _logger.error("Usage: cheat_variable_create <name> <type> <address>")
@@ -1068,12 +1106,17 @@ class CommandCheatVariableCreate(gdb.Command):
             return
         address = int(argv[2], 0)
 
-        if address in [v.address for v in _session.variables if v.valid]:
-            _logger.error(f"Address {address} already exists.")
-        else:
-            _session.variables.append(VariableDefinition(name, value_type, address))
+        # Actual work
+        try:
+            if address in [v.address for v in _session.variables if v.valid]:
+                _logger.error(f"Address {address} already exists.")
+            else:
+                _session.variables.append(VariableDefinition(name, value_type, address))
 
-        _session.summarize_variables()
+            _session.summarize_variables()
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
+            return
 
 
 class CommandCheatVariableSet(gdb.Command):
@@ -1096,6 +1139,7 @@ class CommandCheatVariableSet(gdb.Command):
             _logger.error("No cheat session found.")
             return
 
+        # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) != 2:
             _logger.error("Usage: cheat_variable_set <index> <value>")
@@ -1103,22 +1147,28 @@ class CommandCheatVariableSet(gdb.Command):
         index = int(argv[0], 0)
         value = int(argv[1], 0)
 
-        if index > len(_session.variables):
-            _logger.error("Invalid variable index.")
-            return
+        # Actual work
+        try:
+            if index > len(_session.variables):
+                _logger.error("Invalid variable index.")
+                return
 
-        variable = _session.variables[index]
-        if not variable.valid:
-            _logger.error("Invalid variable.")
+            variable = _session.variables[index]
+            if not variable.valid:
+                _logger.error("Invalid variable.")
+                _session.summarize_variables()
+                return
+            if variable in _session.watchpoints.keys():
+                _logger.error(
+                    f"Variable {variable} is in-use by one of the watchpoints. Update the watchpoint instead.")
+                _session.summarize_watchpoints()
+                return
+
+            variable.set(value)
             _session.summarize_variables()
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
             return
-        if variable in _session.watchpoints.keys():
-            _logger.error(f"Variable {variable} is in-use by one of the watchpoints. Update the watchpoint instead.")
-            _session.summarize_watchpoints()
-            return
-
-        variable.set(value)
-        _session.summarize_variables()
 
 
 class CommandCheatVariableDelete(gdb.Command):
@@ -1141,28 +1191,34 @@ class CommandCheatVariableDelete(gdb.Command):
             _logger.error("No cheat session found.")
             return
 
+        # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) != 1:
             _logger.error("Usage: cheat_variable_delete <index>")
             return
         index = int(argv[0], 0)
 
-        if index > len(_session.variables):
-            _logger.error("Invalid variable index.")
-            return
+        # Actual work
+        try:
+            if index > len(_session.variables):
+                _logger.error("Invalid variable index.")
+                return
 
-        variable = _session.variables[index]
-        if not variable.valid:
-            _logger.error("Invalid variable.")
+            variable = _session.variables[index]
+            if not variable.valid:
+                _logger.error("Invalid variable.")
+                _session.summarize_variables()
+                return
+            if variable in _session.watchpoints.keys():
+                _logger.error(f"Variable {variable} is in-use by one of the watchpoints and cannot be deleted.")
+                _session.summarize_watchpoints()
+                return
+
+            _session.variables[index].valid = False
             _session.summarize_variables()
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
             return
-        if variable in _session.watchpoints.keys():
-            _logger.error(f"Variable {variable} is in-use by one of the watchpoints and cannot be deleted.")
-            _session.summarize_watchpoints()
-            return
-
-        _session.variables[index].valid = False
-        _session.summarize_variables()
 
 
 class CommandCheatVariableSummary(gdb.Command):
@@ -1186,7 +1242,12 @@ class CommandCheatVariableSummary(gdb.Command):
             _logger.error("No cheat session found.")
             return
 
-        _session.summarize_variables()
+        # Actual work
+        try:
+            _session.summarize_variables()
+        except Exception as e:
+            _logger.error(f"Error occurred during operation", exc_info=e)
+            return
 
 
 # GDB Command registration ====================================================
