@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 
 import gdb
 import tqdm
-from typing import Optional, List, Set, Dict, Tuple
+from typing import Optional, List, Dict, Tuple
 from enum import Enum
 
 
@@ -364,25 +364,30 @@ class SearchSession:
         self.inferior = gdb.selected_inferior()
         self.last_search_value = None
 
-    def search_state(self) -> Dict[int, Tuple[int, str]]:
+    def search_state(self) -> List[Tuple[int, int, str]]:
         """
-        Return a summary of the current search session, and current values of the candidate pointers.
-        :return: remaining candidates address, their current values and hexadecimal representation.
+        Return a list of current candidate addresses and their values.
+        :return: list of candidates address, their current values and hexadecimal representation.
         """
         if self.pointer_candidates is None:
-            return {}
+            return []
 
-        current_values: Dict[int, Tuple[int, str]] = dict()
+        current_values: List[Tuple[int, int, str]] = []
 
         for candidate in self.pointer_candidates:
             buffer = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
             buffer_string = bytes_to_readable(buffer)
             value = int.from_bytes(buffer, byteorder="little", signed=self.value_type.signed)
-            current_values[candidate] = (value, buffer_string)
+            current_values.append((candidate, value, buffer_string))
 
         return current_values
 
     def summarize(self, from_tty: bool) -> None:
+        """
+        Print a summary of the current search state.
+        :param from_tty:
+        :return:
+        """
         print("=== Current search ===")
         populated = self.is_populated()
         search_type = self.value_type
@@ -395,9 +400,9 @@ class SearchSession:
             if from_tty and len(search_state) > self.max_print_limit > 0:
                 print(f"  {len(search_state)} candidate variables found. Narrow further to show values.")
             else:
-                for address in search_state.keys():
-                    value, hex_string = search_state[address]
-                    print(f"  0x{address:016x}  {value:>16}   {hex_string}")
+                for index, candidate in enumerate(search_state):
+                    address, value, hex_string = candidate
+                    print(f"[{index}:>4] 0x{address:016x} {value:>16} {hex_string}")
         else:
             print(f"Search state             Unpopulated")
 
@@ -413,7 +418,7 @@ class SearchSession:
             _logger.error("Please populate this search first.")
             return None
 
-        if len(self.pointer_candidates) != 1 and address is None:
+        if len(self.pointer_candidates) > 1 and address is None:
             _logger.error("More than 1 results found. Please choose one to create variable.")
             return None
         elif len(self.pointer_candidates) == 0:
