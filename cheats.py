@@ -28,11 +28,10 @@ class ValueType(str, Enum):
 
     def format_spec(self, address: int) -> str:
         """ Format to gdb acceptable spec """
-        integer_type = gdb.selected_inferior().architecture().integer_type(self.length() * 8, self.signed())
+        return f"*({self}*)0x{address:016x}"
 
-        return f"*({self}*)0x{address:x}"
-
-    def length(self) -> int:
+    @property
+    def length_bytes(self) -> int:
         """ Return the length of the value in number of bytes."""
         if self == ValueType.I8 or self == ValueType.U8:
             return 1
@@ -43,6 +42,7 @@ class ValueType(str, Enum):
         elif self == ValueType.I64 or self == ValueType.U64:
             return 8
 
+    @property
     def signed(self) -> bool:
         """ Return True if the value is signed. """
         if self == ValueType.I8 or self == ValueType.I16 or self == ValueType.I32 or self == ValueType.I64:
@@ -52,29 +52,45 @@ class ValueType(str, Enum):
 
     @staticmethod
     def from_short_hand(notation: str) -> Optional["ValueType"]:
+        """
+        Parse a user specified type string to enum value.
+        :param notation: user input
+        :return:     Value type enum if parsed successfully. otherwise None
+        """
+        lookup_table = {
+            "u8": ValueType.U8,
+            "u16": ValueType.U16,
+            "u32": ValueType.U32,
+            "u64": ValueType.U64,
+            "i8": ValueType.I8,
+            "i16": ValueType.I16,
+            "i32": ValueType.I32,
+            "i64": ValueType.I64,
+        }
+
+        notation_normalized = notation.lower()
         try:
-            return ValueType(notation)
+            return ValueType(notation_normalized)
         except ValueError:
             pass
 
-        if notation == "u8":
-            return ValueType.U8
-        elif notation == "u16":
-            return ValueType.U16
-        elif notation == "u32":
-            return ValueType.U32
-        elif notation == "u64":
-            return ValueType.U64
-        elif notation == "i8":
-            return ValueType.I8
-        elif notation == "i16":
-            return ValueType.I16
-        elif notation == "i32":
-            return ValueType.I32
-        elif notation == "i64":
-            return ValueType.I64
-        else:
-            return None
+        return lookup_table.get(notation_normalized, None)
+
+    @property
+    def short_hand(self) -> str:
+        """ Return a short notation of the value type: i8, u8, etc."""
+        lookup_table = {
+            ValueType.I8: "i8",
+            ValueType.I16: "i16",
+            ValueType.I32: "i32",
+            ValueType.I64: "i64",
+            ValueType.U8: "u8",
+            ValueType.U16: "u16",
+            ValueType.U32: "u32",
+            ValueType.U64: "u64",
+        }
+
+        return lookup_table[self]
 
 
 class VariableDefinition:
@@ -91,23 +107,25 @@ class VariableDefinition:
     def set(self, value: int) -> None:
         """ Set value to buffer """
         process = gdb.selected_inferior()
-        buffer = value.to_bytes(length=self.value_type.length(), byteorder="little")
-        process.write_memory(self.address, buffer, self.value_type.length())
+        buffer = value.to_bytes(length=self.value_type.length_bytes, byteorder="little")
+        process.write_memory(self.address, buffer, self.value_type.length_bytes)
 
     def get(self) -> Optional[Tuple[int, str]]:
         """ Get value from buffer """
         process = gdb.selected_inferior()
         try:
-            buffer = bytes(process.read_memory(self.address, self.value_type.length()))
+            buffer = bytes(process.read_memory(self.address, self.value_type.length_bytes))
         except gdb.MemoryError:
             _logger.error(f"Failed to get value from variable {self.name} at 0x{self.address:016x}")
             return None
 
         buffer_string = bytes_to_readable(buffer)
-        value = int.from_bytes(buffer, byteorder="little", signed=self.value_type.signed())
+        value = int.from_bytes(buffer, byteorder="little", signed=self.value_type.signed)
         return value, buffer_string
 
-    def __eq__(self, other: "VariableDefinition") -> bool:
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, VariableDefinition):
+            return False
         return self.name == other.name and self.value_type == other.value_type and self.address == other.address and self.valid == other.valid
 
     def __repr__(self) -> str:
@@ -231,7 +249,7 @@ class SearchSession:
         :return:  Number of initial candidates
         """
         if self.pointer_candidates is None:
-            byte_pattern = target_value.to_bytes(self.value_type.length(), byteorder="little")
+            byte_pattern = target_value.to_bytes(self.value_type.length_bytes, byteorder="little")
             self.pointer_candidates: Set[int] = set()
             _logger.info(f"Searching for byte pattern: {bytes_to_readable(byte_pattern)}")
 
@@ -252,7 +270,7 @@ class SearchSession:
                         else:
                             _logger.debug(f"Found match at 0x{search_result:016x}")
                             self.pointer_candidates.add(int(search_result))
-                        search_start = search_result + self.value_type.length()
+                        search_start = search_result + self.value_type.length_bytes
             _logger.info(f"Found {len(self.pointer_candidates)} memory pointer candidates")
             self.last_search_value = target_value
         else:
@@ -276,13 +294,13 @@ class SearchSession:
         if target_value is None:
             target_value = self.last_search_value
 
-        target_byte_pattern = target_value.to_bytes(self.value_type.length(), byteorder="little")
+        target_byte_pattern = target_value.to_bytes(self.value_type.length_bytes, byteorder="little")
         _logger.info(f"Searching for byte pattern: {bytes_to_readable(target_byte_pattern)}")
 
         remaining_candidates: Set[int] = set()
         for candidate in tqdm.tqdm(self.pointer_candidates, desc="Narrowing down memory candidates", unit="items"):
             try:
-                current_pattern = bytes(self.inferior.read_memory(candidate, self.value_type.length()))
+                current_pattern = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
             except gdb.MemoryError:
                 # This memory might have been remapped. Consider this candidate eliminated
                 _logger.debug(f"Eliminating candidate 0x{candidate:016x}")
@@ -322,9 +340,9 @@ class SearchSession:
         current_values: Dict[int, Tuple[int, str]] = dict()
 
         for candidate in self.pointer_candidates:
-            buffer = bytes(self.inferior.read_memory(candidate, self.value_type.length()))
+            buffer = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
             buffer_string = bytes_to_readable(buffer)
-            value = int.from_bytes(buffer, byteorder="little", signed=self.value_type.signed())
+            value = int.from_bytes(buffer, byteorder="little", signed=self.value_type.signed)
             current_values[candidate] = (value, buffer_string)
 
         return current_values
@@ -426,18 +444,18 @@ class CheatSession:
             read_result = v.get()
             if read_result is None:
                 print(
-                    f"[{index:>3}]   {v.name:<20} {v.value_type:<10} 0x{v.address:016x} READ FAILURE")
+                    f"[{index:>3}]  0x{v.address:016x} {v.name:<20} {v.value_type.short_hand} READ FAILURE")
                 continue
             else:
                 value, buffer_string = read_result
                 print(
-                    f"[{index:>3}]   {v.name:<20} {v.value_type:<10} 0x{v.address:016x} {value:>08x} {buffer_string}")
+                    f"[{index:>3}]  0x{v.address:016x} {v.name:<20} {v.value_type.short_hand} {value:>16} {buffer_string}")
 
     def summarize_watchpoints(self) -> None:
         print("=== Variable Lock Watchpoints ===")
         for variable, watchpoint in self.watchpoints.items():
             active = "[*]" if watchpoint.enabled else "[ ]"
-            print(f"{active}   {variable.name:<30} {watchpoint.value:>8}")
+            print(f"{active} 0x{variable.address:016x} {variable.name:<20} {watchpoint.value:>16}")
 
 
 # ============================= GDB Commands ===================================
@@ -912,13 +930,16 @@ class CheatVariableCreate(gdb.Command):
             _logger.error("Usage: cheat_variable_create <name> <type> <address>")
             return
         name = argv[0]
-        type = ValueType.from_short_hand(argv[1])
+        value_type = ValueType.from_short_hand(argv[1])
+        if value_type is None:
+            _logger.error(f"Unable to parse data type {argv[1]}")
+            return
         address = int(argv[2], 0)
 
         if address in [v.address for v in _session.variables if v.valid]:
             _logger.error(f"Address {address} already exists.")
         else:
-            _session.variables.append(VariableDefinition(name, type, address))
+            _session.variables.append(VariableDefinition(name, value_type, address))
 
         _session.summarize_variables()
 
