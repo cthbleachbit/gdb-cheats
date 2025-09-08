@@ -1184,3 +1184,6 @@ CommandCheatLockDelete()
 CommandCheatVariableCreate()
 CommandCheatVariableSet()
 CommandCheatVariableDelete()
+
+# Create session for convenience
+gdb.execute("cheat session create")
