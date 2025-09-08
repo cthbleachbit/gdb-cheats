@@ -1165,6 +1165,30 @@ class CommandCheatVariableDelete(gdb.Command):
         _session.summarize_variables()
 
 
+class CommandCheatVariableSummary(gdb.Command):
+    """
+    Print a list of variable and their current in-memory values.
+
+    Usage: cheat_variable_summary
+    """
+
+    def __init__(self):
+        super(CommandCheatVariableSummary, self).__init__(
+            "cheat variable summary",
+            gdb.COMMAND_DATA,
+            gdb.COMPLETE_NONE,
+        )
+
+    def invoke(self, argument: str, from_tty: bool) -> None:
+        global _session
+
+        if _session is None:
+            _logger.error("No cheat session found.")
+            return
+
+        _session.summarize_variables()
+
+
 # GDB Command registration ====================================================
 
 PrefixCheat()
@@ -1189,6 +1213,7 @@ CommandCheatLockDelete()
 CommandCheatVariableCreate()
 CommandCheatVariableSet()
 CommandCheatVariableDelete()
+CommandCheatVariableSummary()
 
 # Create session for convenience
 gdb.execute("cheat session create")
