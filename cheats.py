@@ -241,6 +241,21 @@ class SearchSession:
         self.inferior = gdb.selected_inferior()
         self.last_search_value: Optional[int] = None
 
+        self._max_print_limit: int = 0
+
+    @property
+    def max_print_limit(self) -> int:
+        """
+        Retrieves the maximum number of search results to display for this variable.
+        < 0 = unlimited
+        :return:
+        """
+        return max(0, self._max_print_limit)
+
+    @max_print_limit.setter
+    def max_print_limit(self, value: int) -> None:
+        self._max_print_limit = value
+
     def populate(self, target_value: int, search_segments: Collection[MemorySegment]) -> int:
         """
         Initial populate
@@ -264,7 +279,11 @@ class SearchSession:
                     progress.update(search_end - search_start)
                     while True:
                         search_length = search_end - search_start
-                        search_result = self.inferior.search_memory(search_start, search_length, byte_pattern)
+                        try:
+                            search_result = self.inferior.search_memory(search_start, search_length, byte_pattern)
+                        except gdb.MemoryError as e:
+                            _logger.error(f"Skipping unreadable segment {segment.start}-{segment.end}!", exc_info=e)
+                            _logger.info("You may want to rediscover segments and try again.")
                         if search_result is None:
                             break
                         else:
@@ -347,18 +366,52 @@ class SearchSession:
 
         return current_values
 
-    def define_variable(self, name: str) -> Optional[VariableDefinition]:
+    def summarize(self, from_tty: bool) -> None:
+        print("=== Current search ===")
+        populated = self.is_populated()
+        search_type = self.value_type
+        last_search = self.last_search_value
+        print(f"Target variable type     {search_type}")
+        print(f"Last value searched      {last_search}")
+        if populated:
+            print(f"Search state")
+            search_state = _session.current_search.search_state()
+            if from_tty and len(search_state) > self.max_print_limit > 0:
+                print(f"  {len(search_state)} candidate variables found. Narrow further to show values.")
+            else:
+                for address in search_state.keys():
+                    value, hex_string = search_state[address]
+                    print(f"  0x{address:016x}  {value:>16}   {hex_string}")
+        else:
+            print(f"Search state             Unpopulated")
+
+    def define_variable(self, name: str, address: Optional[int] = None) -> Optional[VariableDefinition]:
         """
-        Produce a variable definition from the given name if there's only 1 pointer left.
-        :param name: The name of the variable to create.
+        Produce a variable definition from the given name.
+        :param name:     The name of the variable to create.
+        :param address:  The address of the variable to define.
+                         Choose from current search results. Can be omitted if the search only has 1 result.
         :return: The variable definition.
         """
-        if len(self.pointer_candidates) != 1:
-            _logger.error("Can only define variables with search narrowed down to exactly 1 pointer.")
+        if self.pointer_candidates is None:
+            _logger.error("Please populate this search first.")
             return None
 
-        candidate = self.pointer_candidates.pop()
-        return VariableDefinition(name, self.value_type, candidate)
+        if len(self.pointer_candidates) != 1 and address is None:
+            _logger.error("More than 1 results found. Please choose one to create variable.")
+            return None
+        elif len(self.pointer_candidates) == 0:
+            _logger.error("No candidates remaining. Please reset and restart this search with different values.")
+            return None
+
+        if len(self.pointer_candidates) == 1:
+            address = self.pointer_candidates.pop()
+        elif address not in self.pointer_candidates:
+            _logger.error(f"Requested address 0x{address:016x} is not in the search results.")
+            self.summarize(from_tty=True)
+            return None
+
+        return VariableDefinition(name, self.value_type, address)
 
     def is_populated(self) -> bool:
         return self.pointer_candidates is not None
@@ -525,6 +578,28 @@ class CheatSessionSummary(gdb.Command):
         CheatSearchSummary.summarize(from_tty)
 
 
+class CheatSessionDiscoverSegments(gdb.Command):
+    """
+    Rescan program segments as thread spawning / mmap may add/remove segments at any time.
+    Usage: cheat_session_discover_segments
+    """
+
+    def __init__(self):
+        super(CheatSessionDiscoverSegments, self).__init__(
+            "cheat_session_discover_segments",
+            gdb.COMMAND_DATA,
+            gdb.COMPLETE_NONE,
+        )
+
+    def invoke(self, argument: str, from_tty: bool) -> None:
+        global _session
+        if _session is None:
+            _logger.error("No cheat session found.")
+            return
+
+        _session.discover_segments()
+
+
 class CheatSessionDelete(gdb.Command):
     """
     Clean up current cheat session.
@@ -540,6 +615,7 @@ class CheatSessionDelete(gdb.Command):
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
+        self.dont_repeat()
         if _session is None:
             _logger.error("No cheat session found.")
 
@@ -671,23 +747,7 @@ class CheatSearchSummary(gdb.Command):
         if _session.current_search is None:
             print("No variable search in progress.")
         else:
-            print("=== Current search ===")
-            populated = _session.current_search.is_populated()
-            search_type = _session.current_search.value_type
-            last_search = _session.current_search.last_search_value
-            print(f"Target variable type     {search_type}")
-            print(f"Last value searched      {last_search}")
-            if populated:
-                print(f"Search state")
-                search_state = _session.current_search.search_state()
-                if from_tty and len(search_state) > CheatSessionSummary.SEARCH_STATE_PRINT_MAX:
-                    print(f"  {len(search_state)} candidate variables found. Narrow further to show values.")
-                else:
-                    for address in search_state.keys():
-                        value, hex_string = search_state[address]
-                        print(f"  0x{address:016x}  {value:>16}   {hex_string}")
-            else:
-                print(f"Search state             Unpopulated")
+            _session.current_search.summarize(from_tty)
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         return CheatSearchSummary.summarize(from_tty)
@@ -696,7 +756,7 @@ class CheatSearchSummary(gdb.Command):
 class CheatSearchDefineVariable(gdb.Command):
     """
     Define a cheat variable and add it to the global session state.
-    Usage: cheat_search_variable <variable name>
+    Usage: cheat_search_variable <variable name> [search result index, default 0]
     """
 
     def __init__(self):
@@ -717,7 +777,7 @@ class CheatSearchDefineVariable(gdb.Command):
 
         argv = gdb.string_to_argv(argument)
         if len(argv) < 1:
-            _logger.error("Invalid number of arguments. Pass exactly 1 argument for name of variable to define.")
+            _logger.error("Usage: cheat_search_variable <variable name> [search result index, default 0]")
             return
 
         variable = _session.current_search.define_variable(argv[0])
@@ -766,6 +826,7 @@ class CheatLockCreate(gdb.Command):
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
+        self.dont_repeat()
         if _session is None:
             _logger.error("No cheat session found.")
             return
@@ -805,6 +866,7 @@ class CheatLockEnable(gdb.Command):
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
+        self.dont_repeat()
         if _session is None:
             _logger.error("No cheat session found.")
             return
@@ -843,6 +905,7 @@ class CheatLockDisable(gdb.Command):
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
+        self.dont_repeat()
         if _session is None:
             _logger.error("No cheat session found.")
             return
@@ -881,6 +944,7 @@ class CheatLockDelete(gdb.Command):
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
+        self.dont_repeat()
         if _session is None:
             _logger.error("No cheat session found.")
             return
@@ -921,6 +985,7 @@ class CheatVariableCreate(gdb.Command):
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
+        self.dont_repeat()
         if _session is None:
             _logger.error("No cheat session found.")
             return
@@ -959,6 +1024,7 @@ class CheatVariableSet(gdb.Command):
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
+        self.dont_repeat()
         if _session is None:
             _logger.error("No cheat session found.")
             return
@@ -1003,6 +1069,7 @@ class CheatVariableDelete(gdb.Command):
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
+        self.dont_repeat()
         if _session is None:
             _logger.error("No cheat session found.")
             return
@@ -1033,6 +1100,7 @@ class CheatVariableDelete(gdb.Command):
 
 CheatSessionCreate()
 CheatSessionSummary()
+CheatSessionDiscoverSegments()
 CheatSessionDelete()
 CheatSearchCreate()
 CheatSearchPopulate()
