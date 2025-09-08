@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 
 import gdb
 import tqdm
-from typing import Optional, List, Collection, Set, Dict, Tuple
+from typing import Optional, List, Set, Dict, Tuple
 from enum import Enum
 
 
@@ -237,7 +237,7 @@ class SearchSession:
         :param value_type: Type for this variable
         """
         self.value_type = value_type
-        self.pointer_candidates: Optional[Set[int]] = None
+        self.pointer_candidates: Optional[List[int]] = None
         self.inferior = gdb.selected_inferior()
         self.last_search_value: Optional[int] = None
 
@@ -256,16 +256,20 @@ class SearchSession:
     def max_print_limit(self, value: int) -> None:
         self._max_print_limit = value
 
-    def populate(self, target_value: int, search_segments: Collection[MemorySegment]) -> int:
+    def populate(self, target_value: int) -> int:
         """
         Initial populate
         :param target_value: initial values to search.
-        :param search_segments:    Look for the value in these MemorySegments.
         :return:  Number of initial candidates
         """
+        search_segments = CheatSession.discover_segments()
+        if not search_segments:
+            _logger.error(f"No segments found!")
+            return 0
+
         if self.pointer_candidates is None:
             byte_pattern = target_value.to_bytes(self.value_type.length_bytes, byteorder="little")
-            self.pointer_candidates: Set[int] = set()
+            self.pointer_candidates = []
             _logger.info(f"Searching for byte pattern: {bytes_to_readable(byte_pattern)}")
 
             with tqdm.tqdm(total=sum(map(len, search_segments)),
@@ -288,7 +292,7 @@ class SearchSession:
                             break
                         else:
                             _logger.debug(f"Found match at 0x{search_result:016x}")
-                            self.pointer_candidates.add(int(search_result))
+                            self.pointer_candidates.append(int(search_result))
                         search_start = search_result + self.value_type.length_bytes
             _logger.info(f"Found {len(self.pointer_candidates)} memory pointer candidates")
             self.last_search_value = target_value
@@ -304,8 +308,9 @@ class SearchSession:
         :return: Number of candidates remaining.
         """
         if self.pointer_candidates is None:
-            _logger.error(f"Please populate this search first.")
-            return 0
+            _logger.info(f"Populating initial candidates...")
+            return self.populate(target_value)
+
         if len(self.pointer_candidates) == 0:
             _logger.info(f"No candidates remaining. You may want to reset and restart this search.")
             return 0
@@ -405,7 +410,7 @@ class SearchSession:
             return None
 
         if len(self.pointer_candidates) == 1:
-            address = self.pointer_candidates.pop()
+            address = self.pointer_candidates[0]
         elif address not in self.pointer_candidates:
             _logger.error(f"Requested address 0x{address:016x} is not in the search results.")
             self.summarize(from_tty=True)
@@ -424,28 +429,32 @@ class CheatSession:
     """ Cheat global session state """
 
     def __init__(self):
-        self.process_segments: List[MemorySegment] = []
-        self.eligible_segments: List[MemorySegment] = []
         self.variables: List[VariableDefinition] = []
         self.watchpoints: Dict[VariableDefinition, LockedValueWatchpoint] = dict()
         self.current_search: Optional[SearchSession] = None
 
         _logger.info("Initializing cheat session.")
 
-    def discover_segments(self):
+    @staticmethod
+    def discover_segments() -> List[MemorySegment]:
         target_pid = gdb.selected_inferior().pid
-        self.process_segments = []
-        self.eligible_segments = []
+        if not target_pid:
+            _logger.error("No target PID.")
+            return []
+
+        process_segments = []
         with open(f"/proc/{target_pid}/maps", "r") as procfs_maps:
             for line in procfs_maps.readlines():
                 segment = MemorySegment.from_proc_pid_map(line)
-                self.process_segments.append(segment)
+                process_segments.append(segment)
 
-        self.eligible_segments = [segment for segment in self.process_segments if
+        eligible_segments = [segment for segment in process_segments if
                                   not segment.is_file_backed() and segment.is_writable() and segment.is_readable()]
 
-        _logger.info("Found {} segments.".format(len(self.process_segments)))
-        _logger.info("Found {} segments containing runtime data.".format(len(self.eligible_segments)))
+        _logger.info("Found {} segments.".format(len(process_segments)))
+        _logger.info("Found {} segments containing runtime data.".format(len(eligible_segments)))
+
+        return eligible_segments
 
     def variable_lock_create(self, variable: VariableDefinition, value: int):
         if variable in self.watchpoints.keys():
@@ -598,11 +607,11 @@ class CheatSessionCreate(gdb.Command):
             _session.cleanup()
 
         _session = CheatSession()
-        _session.discover_segments()
 
         # Also do environmental setup
         # Unity games use SIGPWR, SIGXCPU, SIGUSR1, SIGUSR2 for some reason.
         # Make sure GDB don't stop on these signals and pass them to programs unchanged instead.
+        _logger.info(f"Setting signal handling behavior for certain games...")
         for signal in ["SIGPWR", "SIGXCPU", "SIGUSR1", "SIGUSR2"]:
             gdb.execute(f"handle {signal} nostop noprint noignore", from_tty=from_tty)
 
@@ -748,7 +757,7 @@ class CheatSearchPopulate(gdb.Command):
             return
 
         target_value = int(argv[0], 0)
-        _session.current_search.populate(target_value, _session.eligible_segments)
+        _session.current_search.populate(target_value)
 
 
 class CheatSearchNarrow(gdb.Command):
