@@ -965,12 +965,21 @@ class CommandCheatSearchDefineVariable(gdb.Command):
             _logger.error("Usage: cheat_search_variable <variable name> [search result index, default 0]")
             return
 
+        index = 0 if len(argv) > 1 else int(argv[1])
+
         # Actual work
         try:
-            variable = _session.current_search.define_variable(argv[0])
+            candidates = _session.current_search.search_state()
+            if index >= len(candidates):
+                _logger.error("Invalid search result index.")
+                return
+
+            address = candidates[index][0]
+            variable = _session.current_search.define_variable(argv[0], address)
+
             if variable is not None:
                 _session.variables.append(variable)
-                _logger.info(f"New variable defined at index = {len(_session.variables) - 1}.")
+                _logger.info(f"New variable {variable.name} defined.")
                 _session.summarize_variables()
         except gdb.error as e:
             _logger.error(f"Error occurred during operation", exc_info=e)
