@@ -475,7 +475,7 @@ class SearchSession:
             else:
                 for index, candidate in enumerate(search_state):
                     address, value, hex_string = candidate
-                    print(f"[{index}:>4] 0x{address:016x} {value:>16} {hex_string}")
+                    print(f"[{index:>4}] 0x{address:016x} {value:>16} {hex_string}")
         else:
             print(f"Search state             Unpopulated")
 
