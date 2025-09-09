@@ -1,19 +1,84 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0
-
+import argparse
 import logging
+from time import sleep
 
 _logger = logging.getLogger("cheats")
 logging.basicConfig(level=logging.INFO)
 
 import gdb
 import tqdm
-from typing import Optional, List, Dict, Tuple
+from contextlib import AbstractContextManager
+from typing import Optional, List, Dict, Tuple, Literal
 from enum import Enum
 
 
 def bytes_to_readable(buffer: bytes) -> str:
     return " ".join([f"{b:02x}" for b in buffer])
+
+
+class InferiorState(AbstractContextManager):
+    """
+    Force inferior to enter a specified running state and restore upon exit
+    """
+
+    def __init__(self, inferior: gdb.Inferior, state: Literal["run", "pause"]):
+        self.inferior = inferior
+        self.should_run = state == "run"
+
+    @staticmethod
+    def _run():
+        _logger.info("Continuing inferior execution")
+        gdb.execute("continue &")
+
+    @staticmethod
+    def _stop():
+        _logger.info("Pausing inferior execution")
+        gdb.execute("interrupt -a")
+
+    def __enter__(self) -> None:
+        if self.inferior.pid == 0:
+            raise ValueError("Inferior is not running.")
+
+        self.was_running = any(t.is_running() for t in self.inferior.threads() if t.is_valid())
+        if self.was_running == self.should_run:
+            # Do nothing
+            return
+
+        if self.should_run:
+            # Run the process in background execution mode
+            InferiorState._run()
+        else:
+            # Stop all the threads
+            InferiorState._stop()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.was_running == self.should_run:
+            # Do nothing
+            return
+
+        if self.was_running:
+            # Restore running state into background execution mode
+            InferiorState._run()
+        else:
+            InferiorState._stop()
+
+
+class SoftErrorArgumentParser(argparse.ArgumentParser):
+    """
+    Modified argument parser that raises exceptions instead of exiting
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def error(self, message):
+        raise ValueError(message)
+
+    def exit(self, status=0, message=None):
+        pass
+
 
 
 class ValueType(str, Enum):
@@ -270,6 +335,10 @@ class SearchSession:
             _logger.error(f"No segments found!")
             return 0
 
+        if target_value is None:
+            _logger.error(f"Target value not set!")
+            return 0
+
         if self.pointer_candidates is None:
             byte_pattern = target_value.to_bytes(self.value_type.length_bytes, byteorder="little")
             self.pointer_candidates = []
@@ -328,6 +397,10 @@ class SearchSession:
 
         if target_value is None:
             target_value = self.last_search_value
+
+        if target_value is None:
+            _logger.info(f"No search history yet! Please provide value.")
+            return 0
 
         target_byte_pattern = target_value.to_bytes(self.value_type.length_bytes, byteorder="little")
         _logger.info(f"Searching for byte pattern: {bytes_to_readable(target_byte_pattern)}")
@@ -760,7 +833,7 @@ class CommandCheatSearchPopulate(gdb.Command):
 class CommandCheatSearchNarrow(gdb.Command):
     """
     Narrow down a cheat search session.
-    Usage: cheat search narrow <value to search>
+    Usage: cheat search narrow [--poll N] [--interval SECONDS] <value to search>
     """
 
     def __init__(self):
@@ -769,6 +842,23 @@ class CommandCheatSearchNarrow(gdb.Command):
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
+        self.argument_parser = SoftErrorArgumentParser(
+            description="Narrow down area of memory value search.",
+            exit_on_error=False,
+        )
+        self.argument_parser.add_argument(
+            "--poll", type=int, default=0, help="Poll this many times periodically while running.", dest="poll"
+        )
+        self.argument_parser.add_argument(
+            "--interval", type=int, default=5, help="Polling interval in seconds. Defaults to 5.", dest="interval"
+        )
+        self.argument_parser.add_argument(
+            "search_value", type=int, help="Value to search for.", nargs='?', default=None
+        )
+
+    @staticmethod
+    def arg_parse_error(message: str) -> None:
+        _logger.error(message)
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
@@ -782,16 +872,36 @@ class CommandCheatSearchNarrow(gdb.Command):
             return
 
         argv = gdb.string_to_argv(argument)
-        if len(argv) < 1:
-            target_value = None
-        elif len(argv) == 1:
-            target_value = int(argv[0], 0)
-        else:
-            _logger.error(f"Too many arguments. Usage: cheat_search_narrow <value to search>")
+        try:
+            parsed_args = self.argument_parser.parse_args(argv)
+        except Exception as e:
+            _logger.error(f"Argument parsing failed: {e}", exc_info=None)
             return
 
+        if parsed_args.poll < 0:
+            _logger.error(f"Polling counts must be positive: {parsed_args.poll}")
+            return
+
+        if parsed_args.interval < 1:
+            _logger.error(f"Interval must be positive: {parsed_args.interval}")
+
         try:
-            _session.current_search.narrow(target_value)
+            if parsed_args.poll == 0:
+                # One-shot narrow
+                _session.current_search.narrow(parsed_args.search_value)
+                return
+
+            # Polling mode
+            with InferiorState(gdb.selected_inferior(), "run"):
+                for polled in tqdm.tqdm(range(parsed_args.poll), desc="Polling...", unit="attempt"):
+                    _session.current_search.narrow(parsed_args.search_value)
+                    if polled == parsed_args.poll - 1:
+                        break
+                    else:
+                        _logger.info("Waiting between searches...")
+                        sleep(parsed_args.interval)
+        except KeyboardInterrupt:
+            _logger.error("User interrupted.")
         except Exception as e:
             _logger.error(f"Error occurred during operation", exc_info=e)
             return
