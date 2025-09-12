@@ -15,10 +15,6 @@ from typing import Optional, List, Dict, Tuple, Literal, Union
 from enum import Enum
 
 
-def bytes_to_readable(buffer: bytes) -> str:
-    return " ".join([f"{b:02x}" for b in buffer])
-
-
 class InferiorState(AbstractContextManager):
     """
     Force inferior to enter a specified running state and restore upon exit
@@ -185,11 +181,19 @@ class ValueType(str, Enum):
         return lookup_table[self]
 
     def from_buffer(self, buffer: bytes) -> Union[int, float]:
+        """
+        Create a value from a byte buffer. The buffer must be large enough to fit the data type.
+
+        If the buffer is not large enough to fit the data type, an exception will be raised.
+
+        :param buffer:  buffer to decode
+        :return: decoded integer or float
+        """
         if not self:
             raise ValueError(f"Invalid value type {self}")
 
         if len(buffer) < self.length_bytes:
-            raise ValueError(f"Insufficient buffer! Need {self.length_bytes} bytes, only have {len(buffer)} bytes.")
+            raise ValueError(f"Buffer too small! Need {self.length_bytes} bytes to encode {self}, only have {len(buffer)} bytes.")
 
         if self.is_integral:
             return int.from_bytes(buffer[0:self.length_bytes], "little")
@@ -201,6 +205,11 @@ class ValueType(str, Enum):
             raise ValueError(f"Invalid value type {self}")
 
     def to_buffer(self, value: Union[int, float]) -> bytes:
+        """
+        Encode an integer or float to a byte buffer.
+        :param value:  value to encode
+        :return:       encoded buffer
+        """
         if not self:
             raise ValueError(f"Invalid value type {self}")
 
@@ -212,6 +221,19 @@ class ValueType(str, Enum):
             return struct.pack('d', value)
         else:
             raise ValueError(f"Invalid value type {self}")
+
+    def to_readable(self, value_or_buffer: Union[int, float, bytes]) -> str:
+        """
+        Format a value or buffer into a readable hexdump-like string.
+        :param value_or_buffer:  value or buffer to format
+        :return: formatted hexdump-like string
+        """
+        if isinstance(value_or_buffer, int) or isinstance(value_or_buffer, float):
+            buffer = self.to_buffer(value_or_buffer)
+        else:
+            buffer = value_or_buffer
+
+        return " ".join([f"{b:02x}" for b in buffer])
 
 
 class VariableDefinition:
@@ -240,8 +262,8 @@ class VariableDefinition:
             _logger.error(f"Failed to get value from variable {self.name} at 0x{self.address:016x}")
             return None
 
-        buffer_string = bytes_to_readable(buffer)
         value = self.value_type.from_buffer(buffer)
+        buffer_string = self.value_type.to_readable(value)
         return value, buffer_string
 
     def __eq__(self, other) -> bool:
@@ -398,7 +420,7 @@ class SearchSession:
         if self.pointer_candidates is None:
             byte_pattern = self.value_type.to_buffer(target_value)
             self.pointer_candidates = []
-            _logger.info(f"Searching for byte pattern: {bytes_to_readable(byte_pattern)}")
+            _logger.info(f"Searching for byte pattern: {self.value_type.to_readable(target_value)}")
 
             with tqdm.tqdm(total=sum(map(len, search_segments)),
                            desc="Searching memory",
@@ -459,7 +481,7 @@ class SearchSession:
             return 0
 
         target_byte_pattern = self.value_type.to_buffer(target_value)
-        _logger.info(f"Searching for byte pattern: {bytes_to_readable(target_byte_pattern)}")
+        _logger.info(f"Searching for byte pattern: {self.value_type.to_readable(target_byte_pattern)}")
 
         remaining_candidates: List[int] = []
         for candidate in tqdm.tqdm(self.pointer_candidates, desc="Narrowing down memory candidates", unit="items"):
@@ -505,8 +527,8 @@ class SearchSession:
 
         for candidate in self.pointer_candidates:
             buffer = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
-            buffer_string = bytes_to_readable(buffer)
             value = self.value_type.from_buffer(buffer)
+            buffer_string = self.value_type.to_readable(value)
             current_values.append((candidate, value, buffer_string))
 
         return current_values
