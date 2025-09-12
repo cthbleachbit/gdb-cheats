@@ -952,13 +952,16 @@ class CommandCheatSearchNarrow(gdb.Command):
 
             if parsed_args.poll == 0:
                 # One-shot narrow
-                _session.current_search.narrow(search_value)
+                with InferiorState(gdb.selected_inferior(), "pause"):
+                    _session.current_search.narrow(search_value)
                 return
 
             # Polling mode
             with InferiorState(gdb.selected_inferior(), "run"):
                 for polled in tqdm.tqdm(range(parsed_args.poll), desc="Polling...", unit="attempt"):
-                    _session.current_search.narrow(search_value)
+                    with InferiorState(gdb.selected_inferior(), "pause"):
+                        _session.current_search.narrow(search_value)
+
                     if polled == parsed_args.poll - 1:
                         break
                     else:
