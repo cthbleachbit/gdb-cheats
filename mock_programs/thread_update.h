@@ -10,13 +10,13 @@
 template <typename ValueT>
 int task_update(struct mock_global_sync& global_state, const ValueT initial_heap, const size_t update_heap_offset,
                 const ValueT initial_stack, const size_t update_stack_offset) {
-	static_assert(std::is_integral_v<ValueT> && std::is_unsigned_v<ValueT>);
+	static_assert(std::is_integral_v<ValueT> || std::is_floating_point_v<ValueT>);
 
 	std::cerr << "Update thread starting." << &global_state << std::endl;
 
 	/* Allocate heap and stack space */
-	constexpr ValueT heap_count = HEAP_COUNT / sizeof(ValueT);
-	constexpr ValueT stack_count = STACK_COUNT / sizeof(ValueT);
+	constexpr size_t heap_count = HEAP_COUNT / sizeof(ValueT);
+	constexpr size_t stack_count = STACK_COUNT / sizeof(ValueT);
 	if (update_heap_offset >= heap_count || update_stack_offset >= stack_count) {
 		abort();
 	}

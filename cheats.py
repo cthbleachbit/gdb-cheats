@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0
 import argparse
 import logging
+import struct
 from time import sleep
 
 _logger = logging.getLogger("cheats")
@@ -10,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 import gdb
 import tqdm
 from contextlib import AbstractContextManager
-from typing import Optional, List, Dict, Tuple, Literal
+from typing import Optional, List, Dict, Tuple, Literal, Union
 from enum import Enum
 
 
@@ -90,6 +91,8 @@ class ValueType(str, Enum):
     U16 = "unsigned short",
     U32 = "unsigned int",
     U64 = "unsigned long",
+    F32 = "float",
+    F64 = "double",
 
     def format_spec(self, address: int) -> str:
         """ Format to gdb acceptable spec """
@@ -102,18 +105,38 @@ class ValueType(str, Enum):
             return 1
         elif self == ValueType.I16 or self == ValueType.U16:
             return 2
-        elif self == ValueType.I32 or self == ValueType.U32:
+        elif self == ValueType.I32 or self == ValueType.U32 or self == ValueType.F32:
             return 4
-        elif self == ValueType.I64 or self == ValueType.U64:
+        elif self == ValueType.I64 or self == ValueType.U64 or self == ValueType.F64:
             return 8
 
     @property
     def signed(self) -> bool:
         """ Return True if the value is signed. """
-        if self == ValueType.I8 or self == ValueType.I16 or self == ValueType.I32 or self == ValueType.I64:
-            return True
-        else:
-            return False
+        lookup_table = {
+            ValueType.I8: True,
+            ValueType.U8: False,
+            ValueType.I16: True,
+            ValueType.U16: False,
+            ValueType.I32: True,
+            ValueType.U32: False,
+            ValueType.I64: True,
+            ValueType.U64: False,
+            ValueType.F32: True,
+            ValueType.F64: True,
+        }
+
+        return lookup_table[self]
+
+    @property
+    def is_integral(self) -> bool:
+        """ Return True if the value is integer. """
+        return self and self != ValueType.F32 and self != ValueType.F64
+
+    @property
+    def is_floating_point(self) -> bool:
+        """ Return True if the value is floating point. """
+        return self and self == ValueType.F32 and self == ValueType.F64
 
     @staticmethod
     def from_short_hand(notation: str) -> Optional["ValueType"]:
@@ -131,6 +154,8 @@ class ValueType(str, Enum):
             "i16": ValueType.I16,
             "i32": ValueType.I32,
             "i64": ValueType.I64,
+            "f32": ValueType.F32,
+            "f64": ValueType.F64,
         }
 
         notation_normalized = notation.lower()
@@ -153,9 +178,40 @@ class ValueType(str, Enum):
             ValueType.U16: "u16",
             ValueType.U32: "u32",
             ValueType.U64: "u64",
+            ValueType.F32: "f32",
+            ValueType.F64: "f64",
         }
 
         return lookup_table[self]
+
+    def from_buffer(self, buffer: bytes) -> Union[int, float]:
+        if not self:
+            raise ValueError(f"Invalid value type {self}")
+
+        if len(buffer) < self.length_bytes:
+            raise ValueError(f"Insufficient buffer! Need {self.length_bytes} bytes, only have {len(buffer)} bytes.")
+
+        if self.is_integral:
+            return int.from_bytes(buffer[0:self.length_bytes], "little")
+        elif self == ValueType.F32:
+            return struct.unpack('f', buffer[0:self.length_bytes])[0]
+        elif self == ValueType.F64:
+            return struct.unpack('d', buffer[0:self.length_bytes])[0]
+        else:
+            raise ValueError(f"Invalid value type {self}")
+
+    def to_buffer(self, value: Union[int, float]) -> bytes:
+        if not self:
+            raise ValueError(f"Invalid value type {self}")
+
+        if self.is_integral:
+            return int(value).to_bytes(self.length_bytes, "little")
+        elif self == ValueType.F32:
+            return struct.pack('f', value)
+        elif self == ValueType.F64:
+            return struct.pack('d', value)
+        else:
+            raise ValueError(f"Invalid value type {self}")
 
 
 class VariableDefinition:
@@ -169,13 +225,13 @@ class VariableDefinition:
         """ Format to gdb acceptable spec """
         return self.value_type.format_spec(self.address)
 
-    def set(self, value: int) -> None:
+    def set(self, value: Union[int, float]) -> None:
         """ Set value to buffer """
         process = gdb.selected_inferior()
-        buffer = value.to_bytes(length=self.value_type.length_bytes, byteorder="little")
+        buffer = self.value_type.to_buffer(value)
         process.write_memory(self.address, buffer, self.value_type.length_bytes)
 
-    def get(self) -> Optional[Tuple[int, str]]:
+    def get(self) -> Optional[Tuple[Union[int, float], str]]:
         """ Get value from buffer """
         process = gdb.selected_inferior()
         try:
@@ -185,7 +241,7 @@ class VariableDefinition:
             return None
 
         buffer_string = bytes_to_readable(buffer)
-        value = int.from_bytes(buffer, byteorder="little", signed=self.value_type.signed)
+        value = self.value_type.from_buffer(buffer)
         return value, buffer_string
 
     def __eq__(self, other) -> bool:
@@ -201,7 +257,7 @@ class VariableDefinition:
 
 
 class LockedValueWatchpoint(gdb.Breakpoint):
-    def __init__(self, variable: VariableDefinition, value: int):
+    def __init__(self, variable: VariableDefinition, value: Union[int, float]):
         super().__init__(variable.format_spec(), gdb.BP_WATCHPOINT, gdb.WP_WRITE, True)
         self.variable = variable
         self.value = value
@@ -324,7 +380,7 @@ class SearchSession:
     def max_print_limit(self, value: int) -> None:
         self._max_print_limit = value
 
-    def populate(self, target_value: int) -> int:
+    def populate(self, target_value: Union[int, float]) -> int:
         """
         Initial populate
         :param target_value: initial values to search.
@@ -340,7 +396,7 @@ class SearchSession:
             return 0
 
         if self.pointer_candidates is None:
-            byte_pattern = target_value.to_bytes(self.value_type.length_bytes, byteorder="little")
+            byte_pattern = self.value_type.to_buffer(target_value)
             self.pointer_candidates = []
             _logger.info(f"Searching for byte pattern: {bytes_to_readable(byte_pattern)}")
 
@@ -381,7 +437,7 @@ class SearchSession:
 
         return len(self.pointer_candidates)
 
-    def narrow(self, target_value: Optional[int] = None) -> int:
+    def narrow(self, target_value: Optional[Union[int, float]] = None) -> int:
         """
         Narrow search - remove candidates with non-matching values.
         :param target_value: The value to match, or repeat last search if unspecified.
@@ -402,7 +458,7 @@ class SearchSession:
             _logger.info(f"No search history yet! Please provide value.")
             return 0
 
-        target_byte_pattern = target_value.to_bytes(self.value_type.length_bytes, byteorder="little")
+        target_byte_pattern = self.value_type.to_buffer(target_value)
         _logger.info(f"Searching for byte pattern: {bytes_to_readable(target_byte_pattern)}")
 
         remaining_candidates: List[int] = []
@@ -437,7 +493,7 @@ class SearchSession:
         self.inferior = gdb.selected_inferior()
         self.last_search_value = None
 
-    def search_state(self) -> List[Tuple[int, int, str]]:
+    def search_state(self) -> List[Tuple[int, Union[int, float], str]]:
         """
         Return a list of current candidate addresses and their values.
         :return: list of candidates address, their current values and hexadecimal representation.
@@ -445,12 +501,12 @@ class SearchSession:
         if self.pointer_candidates is None:
             return []
 
-        current_values: List[Tuple[int, int, str]] = []
+        current_values: List[Tuple[int, Union[int, float], str]] = []
 
         for candidate in self.pointer_candidates:
             buffer = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
             buffer_string = bytes_to_readable(buffer)
-            value = int.from_bytes(buffer, byteorder="little", signed=self.value_type.signed)
+            value = self.value_type.from_buffer(buffer)
             current_values.append((candidate, value, buffer_string))
 
         return current_values
@@ -545,7 +601,7 @@ class CheatSession:
 
         return eligible_segments
 
-    def variable_lock_create(self, variable: VariableDefinition, value: int):
+    def variable_lock_create(self, variable: VariableDefinition, value: Union[int]):
         if variable in self.watchpoints.keys():
             old_watchpoint = self.watchpoints.pop(variable)
             old_watchpoint.delete()
@@ -595,18 +651,18 @@ class CheatSession:
             read_result = v.get()
             if read_result is None:
                 print(
-                    f"[{index:>3}]  0x{v.address:016x} {v.name:<20} {v.value_type.short_hand} READ FAILURE")
+                    f"[{index:>3}]  0x{v.address:016x} {v.name:<20} {v.value_type.short_hand:<4} READ FAILURE")
                 continue
             else:
                 value, buffer_string = read_result
                 print(
-                    f"[{index:>3}]  0x{v.address:016x} {v.name:<20} {v.value_type.short_hand} {value:>16} {buffer_string}")
+                    f"[{index:>3}]  0x{v.address:016x} {v.name:<20} {v.value_type.short_hand:<4} {value:>16} {buffer_string}")
 
     def summarize_watchpoints(self) -> None:
         print("=== Variable Lock Watchpoints ===")
-        for variable, watchpoint in self.watchpoints.items():
+        for v, watchpoint in self.watchpoints.items():
             active = "[*]" if watchpoint.enabled else "[ ]"
-            print(f"{active} 0x{variable.address:016x} {variable.name:<20} {watchpoint.value:>16}")
+            print(f"{active} 0x{v.address:016x} {v.name:<20} {watchpoint.value:>16}")
 
 
 # Global State ================================================================
@@ -822,9 +878,12 @@ class CommandCheatSearchPopulate(gdb.Command):
             _logger.error("Usage: cheat_search_populate <initial value to search>")
             return
 
-        target_value = int(argv[0], 0)
-
         try:
+            if _session.current_search.value_type.is_integral:
+                target_value = int(argv[0], 0)
+            else:
+                target_value = float(argv[0])
+
             _session.current_search.populate(target_value)
         except Exception as e:
             _logger.error(f"Error occurred during operation", exc_info=e)
@@ -853,7 +912,7 @@ class CommandCheatSearchNarrow(gdb.Command):
             "--interval", type=int, default=5, help="Polling interval in seconds. Defaults to 5.", dest="interval"
         )
         self.argument_parser.add_argument(
-            "search_value", type=int, help="Value to search for.", nargs='?', default=None
+            "search_value", type=str, help="Value to search for.", nargs='?', default=None
         )
 
     @staticmethod
@@ -886,15 +945,20 @@ class CommandCheatSearchNarrow(gdb.Command):
             _logger.error(f"Interval must be positive: {parsed_args.interval}")
 
         try:
+            if _session.current_search.value_type.is_integral:
+                search_value = int(parsed_args.search_value, 0)
+            else:
+                search_value = float(parsed_args.search_value)
+
             if parsed_args.poll == 0:
                 # One-shot narrow
-                _session.current_search.narrow(parsed_args.search_value)
+                _session.current_search.narrow(search_value)
                 return
 
             # Polling mode
             with InferiorState(gdb.selected_inferior(), "run"):
                 for polled in tqdm.tqdm(range(parsed_args.poll), desc="Polling...", unit="attempt"):
-                    _session.current_search.narrow(parsed_args.search_value)
+                    _session.current_search.narrow(search_value)
                     if polled == parsed_args.poll - 1:
                         break
                     else:
@@ -1038,7 +1102,7 @@ class CommandCheatLockCreate(gdb.Command):
             return
 
         variable_index = int(argv[0], 0)
-        locked_value = int(argv[1], 0)
+        locked_value_str = argv[1]
 
         # Actual work
         try:
@@ -1049,6 +1113,11 @@ class CommandCheatLockCreate(gdb.Command):
 
             if not variable.valid:
                 _logger.error("Invalid variable.")
+
+            if variable.value_type.is_integral:
+                locked_value = int(locked_value_str, 0)
+            else:
+                locked_value = float(locked_value_str)
 
             _session.variable_lock_create(variable, locked_value)
             _session.summarize_watchpoints()
@@ -1264,7 +1333,7 @@ class CommandCheatVariableSet(gdb.Command):
             _logger.error("Usage: cheat_variable_set <index> <value>")
             return
         index = int(argv[0], 0)
-        value = int(argv[1], 0)
+        value_str = argv[1]
 
         # Actual work
         try:
@@ -1282,6 +1351,11 @@ class CommandCheatVariableSet(gdb.Command):
                     f"Variable {variable} is in-use by one of the watchpoints. Update the watchpoint instead.")
                 _session.summarize_watchpoints()
                 return
+
+            if variable.value_type.is_integral:
+                value = int(value_str, 0)
+            else:
+                value = float(value_str)
 
             variable.set(value)
             _session.summarize_variables()
