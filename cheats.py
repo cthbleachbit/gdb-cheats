@@ -20,18 +20,20 @@ class InferiorState(AbstractContextManager):
     Force inferior to enter a specified running state and restore upon exit
     """
 
+    _logger = logging.getLogger("inferior")
+
     def __init__(self, inferior: gdb.Inferior, state: Literal["run", "pause"]):
         self.inferior = inferior
         self.should_run = state == "run"
 
     @staticmethod
     def _run():
-        _logger.info("Continuing inferior execution")
+        InferiorState._logger.info("Continuing inferior execution")
         gdb.execute("continue &")
 
     @staticmethod
     def _stop():
-        _logger.info("Pausing inferior execution")
+        InferiorState._logger.info("Pausing inferior execution")
         gdb.execute("interrupt -a")
 
     def __enter__(self) -> None:
@@ -237,6 +239,9 @@ class ValueType(str, Enum):
 
 
 class VariableDefinition:
+    """
+    Represents a variable living in the program's memory space.
+    """
     def __init__(self, name: str, value_type: ValueType, address: int):
         self.name = name
         self.value_type = value_type
@@ -279,6 +284,11 @@ class VariableDefinition:
 
 
 class LockedValueWatchpoint(gdb.Breakpoint):
+    """
+    Actual watchpoint implementation: locks value on change
+    """
+    _logger = logging.getLogger("watchpoint")
+
     def __init__(self, variable: VariableDefinition, value: Union[int, float]):
         super().__init__(variable.format_spec(), gdb.BP_WATCHPOINT, gdb.WP_WRITE, True)
         self.variable = variable
@@ -287,13 +297,16 @@ class LockedValueWatchpoint(gdb.Breakpoint):
     def stop(self):
         """Upon trigger force value overwrite"""
         self.variable.set(self.value)
-        _logger.info(f"Watchpoint {self.variable.name}={self.value} fired.")
+        _logger.debug(f"Watchpoint {self.variable.name}={self.value} fired.")
 
     def get_variable(self) -> VariableDefinition:
         return self.variable
 
 
 class MemorySegmentPermission:
+    """
+    Bit fields for segment permission flags
+    """
     def __init__(self, r: bool, w: bool, x: bool, p: bool):
         self.r = r
         self.w = w
@@ -320,6 +333,9 @@ class MemorySegmentPermission:
 
 
 class MemorySegment:
+    """
+    Represents a segment in the memory space.
+    """
     def __init__(self, start: int, end: int, permissions: MemorySegmentPermission, offset: int, device: str, inode: int,
                  pathname: str):
         self.start = start
@@ -332,6 +348,11 @@ class MemorySegment:
 
     @staticmethod
     def from_proc_pid_map(line: str) -> Optional["MemorySegment"]:
+        """
+        Parse a memory segment from a proc pid map.
+        :param line: line from proc fs pid map
+        :return: Parsed memory segment
+        """
         tokens = [t.strip() for t in line.strip().split()]
         if len(tokens) < 5:
             raise ValueError(f"Invalid /proc/pid/maps line: {line}")
@@ -484,7 +505,7 @@ class SearchSession:
         _logger.info(f"Searching for byte pattern: {self.value_type.to_readable(target_byte_pattern)}")
 
         remaining_candidates: List[int] = []
-        for candidate in tqdm.tqdm(self.pointer_candidates, desc="Narrowing down memory candidates", unit="items"):
+        for candidate in tqdm.tqdm(self.pointer_candidates, desc="Narrowing down", unit="items"):
             try:
                 current_pattern = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
             except gdb.MemoryError:
