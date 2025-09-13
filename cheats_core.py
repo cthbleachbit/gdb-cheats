@@ -13,7 +13,7 @@ from typing import Optional, List, Dict, Tuple, Literal, Union
 
 import gdb
 
-from cheats_search import GdbBuiltInSearch, MemorySearchImpl
+from cheats_search import GdbBuiltInSearch, MemorySearchImpl, MultiProcessingSearchImpl
 
 _logger = logging.getLogger("core")
 
@@ -394,7 +394,7 @@ class MemorySegment:
 class SearchSession:
     """ Records search progress for a particular variable """
 
-    def __init__(self, value_type: ValueType, search_impl: Literal["gdb"] = "gdb"):
+    def __init__(self, value_type: ValueType):
         """
         Create a new search session which records search progress for a particular variable.
         :param value_type: Type for this variable
@@ -403,11 +403,6 @@ class SearchSession:
         self.candidates: Optional[List[int]] = None
         self.inferior = gdb.selected_inferior()
         self.last_search_value: Optional[int] = None
-
-        if search_impl == "gdb":
-            self._search_impl: MemorySearchImpl = GdbBuiltInSearch(self.inferior)
-        else:
-            raise ValueError(f"Unknown search implementation: {search_impl}")
 
         self._max_print_limit: int = 0
 
@@ -424,13 +419,27 @@ class SearchSession:
     def max_print_limit(self, value: int) -> None:
         self._max_print_limit = value
 
-    def populate(self, target_value: Union[int, float]) -> int:
+    def populate(
+            self,
+            target_value: Union[int, float],
+            search_impl: Literal["gdb", "mp"] = "gdb"
+    ) -> int:
         """
         Initial populate
-        :param target_value: initial values to search.
+        :param target_value: Initial values to search.
+        :param search_impl:  Search implementation.
         :return:  Number of initial candidates
         """
+
+        if search_impl == "gdb":
+            _search_impl: MemorySearchImpl = GdbBuiltInSearch(self.inferior)
+        elif search_impl == "mp":
+            _search_impl: MemorySearchImpl = MultiProcessingSearchImpl(self.inferior)
+        else:
+            raise ValueError(f"Unknown search implementation: {search_impl}")
+
         search_segments = CheatSession.discover_segments()
+
         if not search_segments:
             _logger.error(f"No segments found!")
             return 0
@@ -445,7 +454,7 @@ class SearchSession:
                 f"Searching for byte pattern: {self.value_type.to_readable(target_value)}")
 
             search_areas = [(segment.start, segment.end) for segment in search_segments]
-            self.candidates = self._search_impl.exact(search_areas, byte_pattern)
+            self.candidates = _search_impl.exact(search_areas, byte_pattern)
 
             _logger.info(
                 f"Found {len(self.candidates)} memory pointer candidates")
@@ -456,15 +465,27 @@ class SearchSession:
 
         return len(self.candidates)
 
-    def narrow(self, target_value: Optional[Union[int, float]] = None) -> int:
+    def narrow(
+            self,
+            target_value: Optional[Union[int, float]] = None,
+            search_impl: Literal["gdb", "mp"] = "gdb",
+    ) -> int:
         """
         Narrow search - remove candidates with non-matching values.
         :param target_value: The value to match, or repeat last search if unspecified.
+        :param search_impl:  Search implementation.
         :return: Number of candidates remaining.
         """
         if self.candidates is None:
             _logger.info(f"Populating initial candidates...")
-            return self.populate(target_value)
+            return self.populate(target_value, search_impl)
+
+        if search_impl == "gdb":
+            _search_impl: MemorySearchImpl = GdbBuiltInSearch(self.inferior)
+        elif search_impl == "mp":
+            _search_impl: MemorySearchImpl = MultiProcessingSearchImpl(self.inferior)
+        else:
+            raise ValueError(f"Unknown search implementation: {search_impl}")
 
         if len(self.candidates) == 0:
             _logger.info(
@@ -482,7 +503,7 @@ class SearchSession:
         _logger.info(
             f"Searching for byte pattern: {self.value_type.to_readable(target_byte_pattern)}")
 
-        remaining_candidates: List[int] = self._search_impl.narrow_exact(self.candidates, target_byte_pattern)
+        remaining_candidates: List[int] = _search_impl.narrow_exact(self.candidates, target_byte_pattern)
 
         self.candidates = remaining_candidates
         if len(remaining_candidates) > 1:
@@ -521,12 +542,16 @@ class SearchSession:
 
         return current_values
 
-    def summarize(self, from_tty: bool) -> None:
+    def summarize(self, from_tty: bool, print_limit: Optional[int] = None) -> None:
         """
         Print a summary of the current search state.
-        :param from_tty:
+        :param from_tty:    Whether the function is invoked from tty or not.
+        :param print_limit: Don't print if the number of candidates is above this limit.
         :return:
         """
+        _print_limit = print_limit if print_limit is not None else self.max_print_limit
+
+
         print("=== Current search ===")
         populated = self.is_populated()
         search_type = self.value_type
@@ -536,7 +561,7 @@ class SearchSession:
         if populated:
             print(f"Search state")
             search_state = self.search_state()
-            if from_tty and len(search_state) > self.max_print_limit > 0:
+            if from_tty and len(search_state) > _print_limit > 0:
                 print(
                     f"  {len(search_state)} candidate variables found. Narrow further to show values.")
             else:

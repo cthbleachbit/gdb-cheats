@@ -29,7 +29,7 @@ class SoftErrorArgumentParser(argparse.ArgumentParser):
         raise ValueError(message)
 
     def exit(self, status=0, message=None):
-        pass
+        raise StopIteration(message)
 
 
 # Global State ================================================================
@@ -242,6 +242,24 @@ class CommandCheatSearchPopulate(gdb.Command):
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
+        self.argument_parser = SoftErrorArgumentParser(
+            description="Populate initial candidate pointers.",
+            exit_on_error=False,
+        )
+        self.argument_parser.add_argument(
+            "--search-impl", "-s",
+            type=str,
+            help="Search implementation type. 'gdb' or 'mp'",
+            default="gdb",
+            dest="search_impl",
+        )
+        self.argument_parser.add_argument(
+            "search_value",
+            type=str,
+            help="Value to search for.",
+            nargs='?',
+            default=None,
+        )
 
     def invoke(self, argument: str, from_tty: bool) -> None:
         global _session
@@ -255,18 +273,21 @@ class CommandCheatSearchPopulate(gdb.Command):
             return
 
         argv = gdb.string_to_argv(argument)
-        if len(argv) != 1:
-            _logger.error(
-                "Usage: cheat_search_populate <initial value to search>")
+        try:
+            parsed_args = self.argument_parser.parse_args(argv)
+        except StopIteration:
+            return
+        except Exception as e:
+            _logger.error(f"Argument parsing failed: {e}", exc_info=None)
             return
 
         try:
             if _session.current_search.value_type.is_integral:
-                target_value = int(argv[0], 0)
+                target_value = int(parsed_args.search_value, 0)
             else:
-                target_value = float(argv[0])
+                target_value = float(parsed_args.search_value)
 
-            _session.current_search.populate(target_value)
+            _session.current_search.populate(target_value, parsed_args.search_impl)
         except Exception as e:
             _logger.error(f"Error occurred during operation", exc_info=e)
             return
@@ -289,13 +310,28 @@ class CommandCheatSearchNarrow(gdb.Command):
             exit_on_error=False,
         )
         self.argument_parser.add_argument(
-            "--poll", type=int, default=0, help="Poll this many times periodically while running.", dest="poll"
+            "--poll", "-p",
+            type=int,
+            default=0,
+            help="Poll this many times periodically while running",
+            dest="poll",
         )
         self.argument_parser.add_argument(
-            "--interval", type=int, default=5, help="Polling interval in seconds. Defaults to 5.", dest="interval"
+            "--interval", "-i",
+            type=int,
+            default=5,
+            help="Polling interval in seconds. Defaults to 5.",
+            dest="interval",
         )
         self.argument_parser.add_argument(
-            "search_value", type=str, help="Value to search for.", nargs='?', default=None
+            "--search-impl", "-s",
+            type=str,
+            help="Search implementation type. 'gdb' or 'mp'",
+            default="gdb",
+            dest="search_impl",
+        )
+        self.argument_parser.add_argument(
+            "search_value", type=str, help="Value to search for", nargs='?', default=None
         )
 
     @staticmethod
@@ -316,6 +352,8 @@ class CommandCheatSearchNarrow(gdb.Command):
         argv = gdb.string_to_argv(argument)
         try:
             parsed_args = self.argument_parser.parse_args(argv)
+        except StopIteration:
+            return
         except Exception as e:
             _logger.error(f"Argument parsing failed: {e}", exc_info=None)
             return
@@ -337,14 +375,14 @@ class CommandCheatSearchNarrow(gdb.Command):
             if parsed_args.poll == 0:
                 # One-shot narrow
                 with InferiorState(gdb.selected_inferior(), "pause"):
-                    _session.current_search.narrow(search_value)
+                    _session.current_search.narrow(search_value, parsed_args.search_impl)
                 return
 
             # Polling mode
             with InferiorState(gdb.selected_inferior(), "run"):
                 for polled in tqdm.tqdm(range(parsed_args.poll), desc="Polling...", unit="attempt"):
                     with InferiorState(gdb.selected_inferior(), "pause"):
-                        _session.current_search.narrow(search_value)
+                        _session.current_search.narrow(search_value, parsed_args.search_impl)
 
                     if polled == parsed_args.poll - 1:
                         break
@@ -370,22 +408,42 @@ class CommandCheatSearchSummary(gdb.Command):
             gdb.COMMAND_DATA,
             gdb.COMPLETE_NONE,
         )
+        self.argument_parser = SoftErrorArgumentParser(
+            description="Print a summary of the current candidate pointers.",
+            exit_on_error=False,
+        )
+        self.argument_parser.add_argument(
+            "--limit", "-l",
+            type=int,
+            default=100,
+            help="Limit the number of candidates to print.",
+        )
 
     @staticmethod
-    def summarize(from_tty: bool) -> None:
+    def summarize(from_tty: bool, print_limit: int = 100) -> None:
         global _session
         if _session is None:
             _logger.error("No cheat session found.")
             return
 
         if _session.current_search is None:
-            _logger.error("No variable search in progress.")
+            print("=== No variable search in progress ===")
             return
 
-        _session.current_search.summarize(from_tty)
+        _session.current_search.summarize(from_tty, print_limit)
 
     def invoke(self, argument: str, from_tty: bool) -> None:
-        return CommandCheatSearchSummary.summarize(from_tty)
+        argv = gdb.string_to_argv(argument)
+        try:
+            parsed_args = self.argument_parser.parse_args(argv)
+        except StopIteration:
+            return
+        except Exception as e:
+            _logger.error(f"Argument parsing failed: {e}", exc_info=None)
+            return
+
+        CommandCheatSearchSummary.summarize(from_tty, parsed_args.limit)
+        return
 
 
 class CommandCheatSearchDefineVariable(gdb.Command):

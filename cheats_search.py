@@ -5,9 +5,10 @@
 
 import abc
 import functools
+import itertools
 import logging
 import multiprocessing
-from typing import Tuple, List, Callable, Optional
+from typing import Tuple, List, Callable, Optional, Union
 
 import gdb
 import tqdm
@@ -190,5 +191,96 @@ class GdbBuiltInSearch(MemorySearchImpl):
             for start, end in search_areas:
                 progress.update(end - start)
                 pointer_candidates.extend(self._gdb_search_area(start, end, value, address_filter))
+
+        return pointer_candidates
+
+
+class MultiProcessingSearchImpl(MemorySearchImpl):
+    """
+    Python parallel search implementation
+    """
+
+    def __init__(self, inferior: gdb.Inferior):
+        super().__init__(inferior)
+        self._pool = multiprocessing.Pool()
+        self._split_size = 128 * 1024 * 1024  # 128 MiB
+
+    @staticmethod
+    def _search_range(
+            start: int, end: int,
+            memory: Union[memoryview | bytes],
+            granularity: int,
+            value_filter: Callable[[bytes], bool],
+            address_filter: Callable[[int], bool],
+    ) -> List[int]:
+        area_size = end - start
+        value_start_offsets = range(0, area_size, granularity)
+        candidates: List[int] = []
+
+        for value_start_offset in value_start_offsets:
+            value_address = start + value_start_offset
+            if not address_filter(value_address):
+                continue
+
+            value_end_offset = min(value_start_offset + granularity, area_size)
+            value_buffer = memory[value_start_offset:value_end_offset]
+            if not value_filter(bytes(value_buffer)):
+                continue
+
+            candidates.append(value_address)
+
+        return candidates
+
+    def _search_range_mp(
+            self,
+            start: int, end: int,
+            granularity: int,
+            value_filter: Callable[[bytes], bool],
+            address_filter: Callable[[int], bool],
+    ) -> List[int]:
+        # Always perform granularity-aligned splits
+        effective_split = self._split_size // granularity * granularity
+
+        if end - start < effective_split:
+            memory = self._inferior.read_memory(start, end - start)
+            return self._search_range(start, end, bytes(memory), granularity, value_filter, address_filter)
+
+        # Chop up into smaller ranges
+        chunk_start_offsets = list(range(start, end, effective_split))
+        chunk_end_offsets = [min(s + effective_split, end) for s in chunk_start_offsets]
+        search_ranges = list(zip(chunk_start_offsets, chunk_end_offsets))
+        chunks = [bytes(self._inferior.read_memory(s, e - s)) for s, e in search_ranges]
+        mapped_function_params = list(zip(chunk_start_offsets, chunk_end_offsets, chunks))
+
+        mapped_function = functools.partial(
+            MultiProcessingSearchImpl._search_range,
+            granularity=granularity,
+            value_filter=value_filter,
+            address_filter=address_filter,
+        )
+        nested_candidates = self._pool.map(mapped_function, mapped_function_params)
+        return list(itertools.chain.from_iterable(nested_candidates))
+
+    def filter(
+            self,
+            search_areas: List[Tuple[int, int]],
+            granularity: int,
+            value_filter: Callable[[bytes], bool],
+            address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
+    ) -> List[int]:
+        total_length = sum([end - start for start, end in search_areas])
+        pointer_candidates: List[int] = []
+
+        with tqdm.tqdm(
+                total=total_length,
+                desc="Searching",
+                unit="bytes",
+                unit_scale=True,
+                unit_divisor=1024,
+        ) as progress:
+            for start, end in search_areas:
+                progress.update(end - start)
+                pointer_candidates.extend(
+                    self._search_range_mp(start, end, granularity, value_filter, address_filter))
 
         return pointer_candidates
