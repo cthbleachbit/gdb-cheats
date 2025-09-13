@@ -402,7 +402,7 @@ class SearchSession:
         self.value_type = value_type
         self.candidates: Optional[List[int]] = None
         self.inferior = gdb.selected_inferior()
-        self.last_search_value: Optional[int] = None
+        self.last_search_value: Union[int, Literal["custom filter"], None] = None
 
         self._max_print_limit: int = 0
 
@@ -426,7 +426,7 @@ class SearchSession:
             address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
     ) -> int:
         """
-        Initial populate
+        Initial search populate with a fixed value.
         :param target_value: Initial values to search.
         :param search_impl:  Search implementation.
         :param address_filter:  User specified address criteria.
@@ -467,6 +467,55 @@ class SearchSession:
 
         return len(self.candidates)
 
+    def get_search_impl(self, search_impl: Literal["gdb", "mp"] = "gdb") -> MemorySearchImpl:
+        """
+        Create and retrieve a search implementation instance.
+        :param search_impl:  implementation type
+        :return:
+        """
+        if search_impl == "gdb":
+            return GdbBuiltInSearch(self.inferior)
+        elif search_impl == "mp":
+            return MultiProcessingSearchImpl(self.inferior)
+        else:
+            raise ValueError(f"Unknown search implementation: {search_impl}")
+
+    def populate_filter(
+            self,
+            target_filter: Callable[[bytes], bool],
+            search_impl: Literal["gdb", "mp"] = "gdb",
+            address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
+    ) -> int:
+        """
+        Initial search populate with user specified custom value filter.
+        :param target_filter: User specified value criteria.
+        :param search_impl:   Search implementation.
+        :param address_filter:  User specified address criteria.
+        :return:  Number of initial candidates
+        """
+
+        _search_impl: MemorySearchImpl = self.get_search_impl(search_impl)
+
+        search_segments = CheatSession.discover_segments()
+
+        if not search_segments:
+            _logger.error(f"No segments found!")
+            return 0
+
+        if self.candidates is None:
+            search_areas = [(segment.start, segment.end) for segment in search_segments]
+            self.candidates = _search_impl.filter(search_areas, self.value_type.length_bytes,
+                                                  value_filter=target_filter, address_filter=address_filter)
+
+            _logger.info(
+                f"Found {len(self.candidates)} memory pointer candidates")
+            self.last_search_value = "custom filter"
+        else:
+            _logger.error(
+                f"Search session has already been populated. Skipping.")
+
+        return len(self.candidates)
+
     def narrow(
             self,
             target_value: Optional[Union[int, float]] = None,
@@ -482,12 +531,7 @@ class SearchSession:
             _logger.info(f"Populating initial candidates...")
             return self.populate(target_value, search_impl)
 
-        if search_impl == "gdb":
-            _search_impl: MemorySearchImpl = GdbBuiltInSearch(self.inferior)
-        elif search_impl == "mp":
-            _search_impl: MemorySearchImpl = MultiProcessingSearchImpl(self.inferior)
-        else:
-            raise ValueError(f"Unknown search implementation: {search_impl}")
+        _search_impl = self.get_search_impl(search_impl)
 
         if len(self.candidates) == 0:
             _logger.info(
@@ -495,7 +539,11 @@ class SearchSession:
             return 0
 
         if target_value is None:
-            target_value = self.last_search_value
+            if self.last_search_value == "custom filter":
+                _logger.error("Narrow search by rules is currently unsupported.")
+                return 0
+            else:
+                target_value = self.last_search_value
 
         if target_value is None:
             _logger.info(f"No search history yet! Please provide value.")
