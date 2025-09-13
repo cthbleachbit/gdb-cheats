@@ -26,6 +26,10 @@ class MemorySearchImpl(abc.ABC):
         return True
 
     @staticmethod
+    def address_filter_alignment_offset(address: int, /, alignment: int, offset: int) -> bool:
+        return address % alignment == offset
+
+    @staticmethod
     def value_filter_exact(target: bytes, compare: bytes) -> bool:
         return target == compare
 

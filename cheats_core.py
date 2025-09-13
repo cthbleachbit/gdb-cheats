@@ -9,7 +9,7 @@ import sys
 from contextlib import AbstractContextManager
 from enum import Enum
 from time import sleep
-from typing import Optional, List, Dict, Tuple, Literal, Union
+from typing import Optional, List, Dict, Tuple, Literal, Union, Callable
 
 import gdb
 
@@ -422,12 +422,14 @@ class SearchSession:
     def populate(
             self,
             target_value: Union[int, float],
-            search_impl: Literal["gdb", "mp"] = "gdb"
+            search_impl: Literal["gdb", "mp"] = "gdb",
+            address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
     ) -> int:
         """
         Initial populate
         :param target_value: Initial values to search.
         :param search_impl:  Search implementation.
+        :param address_filter:  User specified address criteria.
         :return:  Number of initial candidates
         """
 
@@ -454,7 +456,7 @@ class SearchSession:
                 f"Searching for byte pattern: {self.value_type.to_readable(target_value)}")
 
             search_areas = [(segment.start, segment.end) for segment in search_segments]
-            self.candidates = _search_impl.exact(search_areas, byte_pattern)
+            self.candidates = _search_impl.exact(search_areas, byte_pattern, address_filter=address_filter)
 
             _logger.info(
                 f"Found {len(self.candidates)} memory pointer candidates")

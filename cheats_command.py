@@ -4,6 +4,7 @@
 # GDB Cheats - GDB Command Frontend
 
 import argparse
+import functools
 import logging
 import sys
 from time import sleep
@@ -13,6 +14,7 @@ import gdb
 import tqdm
 
 from cheats_core import ValueType, CheatSession, SearchSession, InferiorState, VariableDefinition
+from cheats_search import MemorySearchImpl
 
 _logger = logging.getLogger("command")
 
@@ -254,6 +256,18 @@ class CommandCheatSearchPopulate(gdb.Command):
             dest="search_impl",
         )
         self.argument_parser.add_argument(
+            "--alignment", "-a",
+            type=int,
+            help="Variable alignment",
+            default=1,
+        )
+        self.argument_parser.add_argument(
+            "--offset", "-o",
+            type=functools.partial(int, base=0),
+            help="Variable offset from alignment",
+            default=0,
+        )
+        self.argument_parser.add_argument(
             "search_value",
             type=str,
             help="Value to search for.",
@@ -281,13 +295,22 @@ class CommandCheatSearchPopulate(gdb.Command):
             _logger.error(f"Argument parsing failed: {e}", exc_info=None)
             return
 
+        if parsed_args.alignment < 1:
+            address_filter = MemorySearchImpl.address_filter_true
+        else:
+            address_filter = functools.partial(
+                MemorySearchImpl.address_filter_alignment_offset,
+                alignment=parsed_args.alignment,
+                offset=parsed_args.offset
+            )
+
         try:
             if _session.current_search.value_type.is_integral:
                 target_value = int(parsed_args.search_value, 0)
             else:
                 target_value = float(parsed_args.search_value)
 
-            _session.current_search.populate(target_value, parsed_args.search_impl)
+            _session.current_search.populate(target_value, parsed_args.search_impl, address_filter)
         except Exception as e:
             _logger.error(f"Error occurred during operation", exc_info=e)
             return
