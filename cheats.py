@@ -1075,7 +1075,7 @@ class CommandCheatSearchDefineVariable(gdb.Command):
             _logger.error("Usage: cheat_search_variable <variable name> [search result index, default 0]")
             return
 
-        index = 0 if len(argv) > 1 else int(argv[1])
+        index = int(argv[1]) if len(argv) > 1 else 0
 
         # Actual work
         try:
