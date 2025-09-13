@@ -5,19 +5,22 @@
 
 import abc
 import functools
+import importlib
 import itertools
 import logging
-import multiprocessing
+import multiprocessing as mp
+import pprint
 from typing import Tuple, List, Callable, Optional, Union
 
-import gdb
+# gdb is an embedded module - not available under MP forkserver / spawn.
+# import gdb
 import tqdm
 
 _logger = logging.getLogger("search")
 
-
 class MemorySearchImpl(abc.ABC):
-    def __init__(self, inferior: gdb.Inferior):
+    def __init__(self, inferior):
+        self._gdb = importlib.import_module("gdb")
         self._logger = _logger.getChild(self.__class__.__name__)
         self._inferior = inferior
 
@@ -86,7 +89,7 @@ class MemorySearchImpl(abc.ABC):
             try:
                 current_pattern = bytes(self._inferior.read_memory(
                     candidate, granularity))
-            except gdb.MemoryError:
+            except self._gdb.MemoryError:
                 # This memory might have been remapped. Consider this candidate eliminated
                 self._logger.debug(f"Eliminating candidate 0x{candidate:016x}")
                 continue
@@ -116,7 +119,7 @@ class GdbBuiltInSearch(MemorySearchImpl):
     GDB internal search implementation. This only allows exact memory match.
     """
 
-    def __init__(self, inferior: gdb.Inferior):
+    def __init__(self, inferior):
         super().__init__(inferior)
 
     def filter(
@@ -154,7 +157,7 @@ class GdbBuiltInSearch(MemorySearchImpl):
             try:
                 search_result = self._inferior.search_memory(
                     search_start, search_length, value)
-            except gdb.MemoryError as e:
+            except self._gdb.MemoryError as e:
                 self._logger.error(f"Skipping unreadable segment {start:016x}-{end:016x}!",
                                    exc_info=e)
                 continue
@@ -204,10 +207,10 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
     Python parallel search implementation
     """
 
-    def __init__(self, inferior: gdb.Inferior):
+    def __init__(self, inferior):
         super().__init__(inferior)
-        self._pool = multiprocessing.Pool()
-        self._split_size = 128 * 1024 * 1024  # 128 MiB
+        self._split_size = 16 * 1024 * 1024  # 16 MiB
+        self._mp = mp.get_context("forkserver")
 
     @staticmethod
     def _search_range(
@@ -262,8 +265,15 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
             value_filter=value_filter,
             address_filter=address_filter,
         )
-        nested_candidates = self._pool.map(mapped_function, mapped_function_params)
-        return list(itertools.chain.from_iterable(nested_candidates))
+        try:
+            with self._mp.Pool() as pool:
+                nested_candidates = pool.starmap(mapped_function, mapped_function_params)
+            return list(itertools.chain.from_iterable(nested_candidates))
+        except Exception as e:
+            _logger.error("Search failed", exc_info=e)
+            pprint.pprint(search_ranges)
+            return []
+
 
     def filter(
             self,
