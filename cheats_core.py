@@ -12,7 +12,8 @@ from time import sleep
 from typing import Optional, List, Dict, Tuple, Literal, Union
 
 import gdb
-import tqdm
+
+from cheats_search import GdbBuiltInSearch, MemorySearchImpl
 
 _logger = logging.getLogger("core")
 
@@ -393,15 +394,20 @@ class MemorySegment:
 class SearchSession:
     """ Records search progress for a particular variable """
 
-    def __init__(self, value_type: ValueType):
+    def __init__(self, value_type: ValueType, search_impl: Literal["gdb"] = "gdb"):
         """
         Create a new search session which records search progress for a particular variable.
         :param value_type: Type for this variable
         """
         self.value_type = value_type
-        self.pointer_candidates: Optional[List[int]] = None
+        self.candidates: Optional[List[int]] = None
         self.inferior = gdb.selected_inferior()
         self.last_search_value: Optional[int] = None
+
+        if search_impl == "gdb":
+            self._search_impl: MemorySearchImpl = GdbBuiltInSearch(self.inferior)
+        else:
+            raise ValueError(f"Unknown search implementation: {search_impl}")
 
         self._max_print_limit: int = 0
 
@@ -433,55 +439,22 @@ class SearchSession:
             _logger.error(f"Target value not set!")
             return 0
 
-        if self.pointer_candidates is None:
+        if self.candidates is None:
             byte_pattern = self.value_type.to_buffer(target_value)
-            self.pointer_candidates = []
             _logger.info(
                 f"Searching for byte pattern: {self.value_type.to_readable(target_value)}")
 
-            with tqdm.tqdm(total=sum(map(len, search_segments)),
-                           desc="Searching memory",
-                           unit="bytes",
-                           unit_scale=True,
-                           unit_divisor=1024) as progress:
-                for segment in search_segments:
-                    search_start = segment.start
-                    search_end = segment.end
-                    progress.update(search_end - search_start)
-                    while True:
-                        search_length = search_end - search_start
-                        if search_length <= 0:
-                            break
+            search_areas = [(segment.start, segment.end) for segment in search_segments]
+            self.candidates = self._search_impl.exact(search_areas, byte_pattern)
 
-                        try:
-                            search_result = self.inferior.search_memory(
-                                search_start, search_length, byte_pattern)
-                        except gdb.MemoryError as e:
-                            _logger.error(f"Skipping unreadable segment {segment.start:016x}-{segment.end:016x}!",
-                                          exc_info=e)
-                            _logger.info(
-                                "You may want to rediscover segments and try again.")
-                            continue
-                        except ValueError as e:
-                            _logger.error(
-                                f"Skipping segment {segment.start:016x}-{segment.end:016x}!", exc_info=e)
-                            continue
-
-                        if search_result is None:
-                            break
-                        else:
-                            _logger.debug(
-                                f"Found match at 0x{search_result:016x}")
-                            self.pointer_candidates.append(int(search_result))
-                        search_start = search_result + self.value_type.length_bytes
             _logger.info(
-                f"Found {len(self.pointer_candidates)} memory pointer candidates")
+                f"Found {len(self.candidates)} memory pointer candidates")
             self.last_search_value = target_value
         else:
             _logger.error(
                 f"Search session has already been populated. Skipping.")
 
-        return len(self.pointer_candidates)
+        return len(self.candidates)
 
     def narrow(self, target_value: Optional[Union[int, float]] = None) -> int:
         """
@@ -489,11 +462,11 @@ class SearchSession:
         :param target_value: The value to match, or repeat last search if unspecified.
         :return: Number of candidates remaining.
         """
-        if self.pointer_candidates is None:
+        if self.candidates is None:
             _logger.info(f"Populating initial candidates...")
             return self.populate(target_value)
 
-        if len(self.pointer_candidates) == 0:
+        if len(self.candidates) == 0:
             _logger.info(
                 f"No candidates remaining. You may want to reset and restart this search.")
             return 0
@@ -509,23 +482,9 @@ class SearchSession:
         _logger.info(
             f"Searching for byte pattern: {self.value_type.to_readable(target_byte_pattern)}")
 
-        remaining_candidates: List[int] = []
-        for candidate in tqdm.tqdm(self.pointer_candidates, desc="Narrowing down", unit="items"):
-            try:
-                current_pattern = bytes(self.inferior.read_memory(
-                    candidate, self.value_type.length_bytes))
-            except gdb.MemoryError:
-                # This memory might have been remapped. Consider this candidate eliminated
-                _logger.debug(f"Eliminating candidate 0x{candidate:016x}")
-                continue
+        remaining_candidates: List[int] = self._search_impl.narrow_exact(self.candidates, target_byte_pattern)
 
-            if current_pattern == target_byte_pattern:
-                _logger.debug(f"Keeping candidate 0x{candidate:016x}")
-                remaining_candidates.append(candidate)
-            else:
-                _logger.debug(f"Eliminating candidate 0x{candidate:016x}")
-
-        self.pointer_candidates = remaining_candidates
+        self.candidates = remaining_candidates
         if len(remaining_candidates) > 1:
             _logger.info(
                 f"{len(remaining_candidates)} memory pointer candidates remaining.")
@@ -539,7 +498,7 @@ class SearchSession:
         return len(remaining_candidates)
 
     def reset(self) -> None:
-        self.pointer_candidates = None
+        self.candidates = None
         self.inferior = gdb.selected_inferior()
         self.last_search_value = None
 
@@ -548,12 +507,12 @@ class SearchSession:
         Return a list of current candidate addresses and their values.
         :return: list of candidates address, their current values and hexadecimal representation.
         """
-        if self.pointer_candidates is None:
+        if self.candidates is None:
             return []
 
         current_values: List[Tuple[int, Union[int, float], str]] = []
 
-        for candidate in self.pointer_candidates:
+        for candidate in self.candidates:
             buffer = bytes(self.inferior.read_memory(
                 candidate, self.value_type.length_bytes))
             value = self.value_type.from_buffer(buffer)
@@ -596,22 +555,22 @@ class SearchSession:
                          Choose from current search results. Can be omitted if the search only has 1 result.
         :return: The variable definition.
         """
-        if self.pointer_candidates is None:
+        if self.candidates is None:
             _logger.error("Please populate this search first.")
             return None
 
-        if len(self.pointer_candidates) > 1 and address is None:
+        if len(self.candidates) > 1 and address is None:
             _logger.error(
                 "More than 1 results found. Please choose one to create variable.")
             return None
-        elif len(self.pointer_candidates) == 0:
+        elif len(self.candidates) == 0:
             _logger.error(
                 "No candidates remaining. Please reset and restart this search with different values.")
             return None
 
-        if len(self.pointer_candidates) == 1:
-            address = self.pointer_candidates[0]
-        elif address not in self.pointer_candidates:
+        if len(self.candidates) == 1:
+            address = self.candidates[0]
+        elif address not in self.candidates:
             _logger.error(
                 f"Requested address 0x{address:016x} is not in the search results.")
             self.summarize(from_tty=True)
@@ -620,10 +579,10 @@ class SearchSession:
         return VariableDefinition(name, self.value_type, address)
 
     def is_populated(self) -> bool:
-        return self.pointer_candidates is not None
+        return self.candidates is not None
 
     def __len__(self) -> int:
-        return len(self.pointer_candidates)
+        return len(self.candidates)
 
 
 class CheatSession:
