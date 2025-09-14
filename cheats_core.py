@@ -9,11 +9,12 @@ import sys
 from contextlib import AbstractContextManager
 from enum import Enum
 from time import sleep
-from typing import Optional, List, Dict, Tuple, Literal, Union, Callable
+from typing import Optional, List, Dict, Tuple, Literal, Union
 
 import gdb
 
 from cheats_search import GdbBuiltInSearch, MemorySearchImpl, MultiProcessingSearchImpl
+from cheats_typing import Address, Buffer, Numeric, Offset, AddressPredicate, ValuePredicate
 
 _logger = logging.getLogger("core")
 
@@ -81,7 +82,7 @@ class ValueType(str, Enum):
     F32 = "float",
     F64 = "double",
 
-    def format_spec(self, address: int) -> str:
+    def format_spec(self, address: Address) -> str:
         """ Format to gdb acceptable spec """
         return f"*({self}*)0x{address:016x}"
 
@@ -171,7 +172,7 @@ class ValueType(str, Enum):
 
         return lookup_table[self]
 
-    def from_buffer(self, buffer: bytes) -> Union[int, float]:
+    def from_buffer(self, buffer: Buffer) -> Numeric:
         """
         Create a value from a byte buffer. The buffer must be large enough to fit the data type.
 
@@ -196,7 +197,7 @@ class ValueType(str, Enum):
         else:
             raise ValueError(f"Invalid value type {self}")
 
-    def to_buffer(self, value: Union[int, float]) -> bytes:
+    def to_buffer(self, value: Numeric) -> Buffer:
         """
         Encode an integer or float to a byte buffer.
         :param value:  value to encode
@@ -214,7 +215,7 @@ class ValueType(str, Enum):
         else:
             raise ValueError(f"Invalid value type {self}")
 
-    def to_readable(self, value_or_buffer: Union[int, float, bytes]) -> str:
+    def to_readable(self, value_or_buffer: Union[Numeric, Buffer]) -> str:
         """
         Format a value or buffer into a readable hexdump-like string.
         :param value_or_buffer:  value or buffer to format
@@ -233,7 +234,7 @@ class VariableDefinition:
     Represents a variable living in the program's memory space.
     """
 
-    def __init__(self, name: str, value_type: ValueType, address: int):
+    def __init__(self, name: str, value_type: ValueType, address: Address):
         self.name = name
         self.value_type = value_type
         self.address = address
@@ -243,14 +244,14 @@ class VariableDefinition:
         """ Format to gdb acceptable spec """
         return self.value_type.format_spec(self.address)
 
-    def set(self, value: Union[int, float]) -> None:
+    def set(self, value: Numeric) -> None:
         """ Set value to buffer """
         process = gdb.selected_inferior()
         buffer = self.value_type.to_buffer(value)
         process.write_memory(self.address, buffer,
                              self.value_type.length_bytes)
 
-    def get(self) -> Optional[Tuple[Union[int, float], str]]:
+    def get(self) -> Optional[Tuple[Numeric, str]]:
         """ Get value from buffer """
         process = gdb.selected_inferior()
         try:
@@ -283,7 +284,7 @@ class LockedValueWatchpoint(gdb.Breakpoint):
     """
     _logger = logging.getLogger("watchpoint")
 
-    def __init__(self, variable: VariableDefinition, value: Union[int, float]):
+    def __init__(self, variable: VariableDefinition, value: Numeric):
         super().__init__(variable.format_spec(), gdb.BP_WATCHPOINT, gdb.WP_WRITE, True)
         self.variable = variable
         self.value = value
@@ -332,8 +333,15 @@ class MemorySegment:
     Represents a segment in the memory space.
     """
 
-    def __init__(self, start: int, end: int, permissions: MemorySegmentPermission, offset: int, device: str, inode: int,
-                 pathname: str):
+    def __init__(
+            self,
+            start: Address,
+            end: Address,
+            permissions: MemorySegmentPermission,
+            offset: Offset,
+            device: str,
+            inode: int,
+            pathname: str):
         self.start = start
         self.end = end
         self.permissions = permissions
@@ -421,9 +429,9 @@ class SearchSession:
 
     def populate(
             self,
-            target_value: Union[int, float],
+            target_value: Numeric,
             search_impl: Literal["gdb", "mp"] = "gdb",
-            address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
+            address_filter: AddressPredicate = MemorySearchImpl.address_filter_true,
     ) -> int:
         """
         Initial search populate with a fixed value.
@@ -482,9 +490,9 @@ class SearchSession:
 
     def populate_filter(
             self,
-            target_filter: Callable[[bytes], bool],
+            target_filter: ValuePredicate,
             search_impl: Literal["gdb", "mp"] = "gdb",
-            address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
+            address_filter: AddressPredicate = MemorySearchImpl.address_filter_true,
     ) -> int:
         """
         Initial search populate with user specified custom value filter.
@@ -518,7 +526,7 @@ class SearchSession:
 
     def narrow(
             self,
-            target_value: Optional[Union[int, float]] = None,
+            target_value: Optional[Numeric] = None,
             search_impl: Literal["gdb", "mp"] = "gdb",
     ) -> int:
         """
@@ -573,7 +581,7 @@ class SearchSession:
         self.inferior = gdb.selected_inferior()
         self.last_search_value = None
 
-    def search_state(self) -> List[Tuple[int, Union[int, float], str]]:
+    def search_state(self) -> List[Tuple[Address, Numeric, str]]:
         """
         Return a list of current candidate addresses and their values.
         :return: list of candidates address, their current values and hexadecimal representation.
@@ -581,7 +589,7 @@ class SearchSession:
         if self.candidates is None:
             return []
 
-        current_values: List[Tuple[int, Union[int, float], str]] = []
+        current_values: List[Tuple[Address, Numeric, str]] = []
 
         for candidate in self.candidates:
             buffer = bytes(self.inferior.read_memory(
@@ -622,7 +630,7 @@ class SearchSession:
         else:
             print(f"Search state             Unpopulated")
 
-    def define_variable(self, name: str, address: Optional[int] = None) -> Optional[VariableDefinition]:
+    def define_variable(self, name: str, address: Optional[Address] = None) -> Optional[VariableDefinition]:
         """
         Produce a variable definition from the given name.
         :param name:     The name of the variable to create.
@@ -693,7 +701,7 @@ class CheatSession:
 
         return eligible_segments
 
-    def variable_lock_create(self, variable: VariableDefinition, value: Union[int]) -> None:
+    def variable_lock_create(self, variable: VariableDefinition, value: Numeric) -> None:
         if variable in self.watchpoints.keys():
             old_watchpoint = self.watchpoints.pop(variable)
             old_watchpoint.delete()

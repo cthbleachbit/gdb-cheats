@@ -10,11 +10,13 @@ import itertools
 import logging
 import multiprocessing as mp
 import pprint
-from typing import Tuple, List, Callable, Optional, Union
+from typing import Tuple, List, Optional
 
 # gdb is an embedded module - not available under MP forkserver / spawn.
 # import gdb
 import tqdm
+
+from cheats_typing import Address, Offset, Buffer, ValuePredicate, AddressPredicate
 
 _logger = logging.getLogger("search")
 
@@ -25,24 +27,24 @@ class MemorySearchImpl(abc.ABC):
         self._inferior = inferior
 
     @staticmethod
-    def address_filter_true(address: int) -> bool:
+    def address_filter_true(address: Address) -> bool:
         return True
 
     @staticmethod
-    def address_filter_alignment_offset(address: int, /, alignment: int, offset: int) -> bool:
+    def address_filter_alignment_offset(address: Address, /, alignment: Offset, offset: Offset) -> bool:
         return address % alignment == offset
 
     @staticmethod
-    def value_filter_exact(target: bytes, compare: bytes) -> bool:
-        return target == compare
+    def value_filter_exact(target: Buffer, compare: Buffer) -> bool:
+        return bytes(target) == bytes(compare)
 
     @abc.abstractmethod
     def filter(
-            self, search_areas: List[Tuple[int, int]],
+            self, search_areas: List[Tuple[Address, Address]],
             granularity: int,
-            value_filter: Optional[Callable[[bytes], bool]],
-            address_filter: Callable[[int], bool] = address_filter_true,
-    ) -> List[int]:
+            value_filter: Optional[ValuePredicate],
+            address_filter: AddressPredicate = address_filter_true,
+    ) -> List[Address]:
         """
         Search memory for given search areas.
         :param search_areas:    A list of (start, end) each describing a search area.
@@ -56,10 +58,10 @@ class MemorySearchImpl(abc.ABC):
 
     def exact(
             self,
-            search_areas: List[Tuple[int, int]],
-            value: bytes,
-            address_filter: Callable[[int], bool] = address_filter_true,
-    ) -> List[int]:
+            search_areas: List[Tuple[Address, Address]],
+            value: Buffer,
+            address_filter: AddressPredicate = address_filter_true,
+    ) -> List[Address]:
         """
         Search memory for given search areas.
         :param search_areas:    A list of (start, end) each describing a search area.
@@ -72,10 +74,10 @@ class MemorySearchImpl(abc.ABC):
 
     def narrow_filter(
             self,
-            pointers: List[int],
+            pointers: List[Address],
             granularity: int,
-            value_filter: Callable[[bytes], bool],
-    ) -> List[int]:
+            value_filter: ValuePredicate,
+    ) -> List[Address]:
         """
         Narrow down a list of pointers with a condition on its current value.
         :param pointers:        A list of pointers.
@@ -83,7 +85,7 @@ class MemorySearchImpl(abc.ABC):
         :param value_filter:    A predicate checking whether the value matches user criteria.
         :return: Remaining pointers that matches the user criteria.
         """
-        remaining_candidates: List[int] = []
+        remaining_candidates: List[Address] = []
 
         for candidate in tqdm.tqdm(pointers, desc="Narrowing down", unit="items"):
             try:
@@ -102,8 +104,7 @@ class MemorySearchImpl(abc.ABC):
 
         return remaining_candidates
 
-
-    def narrow_exact(self, pointers: List[int], value: bytes) -> List[int]:
+    def narrow_exact(self, pointers: List[Address], value: Buffer) -> List[Address]:
         """
         Narrow down a list of pointers keeping those with the specified value.
         :param pointers:        A list of pointers.
@@ -124,19 +125,19 @@ class GdbBuiltInSearch(MemorySearchImpl):
 
     def filter(
             self,
-            search_areas: List[Tuple[int, int]],
+            search_areas: List[Tuple[Address, Address]],
             granularity: int,
-            value_filter: Callable[[bytes], bool],
-            address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
-    ) -> List[int]:
+            value_filter: ValuePredicate,
+            address_filter: AddressPredicate = MemorySearchImpl.address_filter_true,
+    ) -> List[Address]:
         raise NotImplementedError("GDB internal search only allows exact memory match.")
 
     def _gdb_search_area(
             self,
-            start: int, end: int,
-            value: bytes,
-            address_filter: Callable[[int], bool],
-    ) -> List[int]:
+            start: Address, end: Address,
+            value: Buffer,
+            address_filter: AddressPredicate,
+    ) -> List[Address]:
         """
         Search a single memory area with gdb
         :param start:  start address to search
@@ -148,7 +149,7 @@ class GdbBuiltInSearch(MemorySearchImpl):
         search_start = start
         search_end = end
 
-        pointer_candidates: List[int] = []
+        pointer_candidates: List[Address] = []
         while True:
             search_length = search_end - search_start
             if search_length <= 0:
@@ -172,7 +173,7 @@ class GdbBuiltInSearch(MemorySearchImpl):
                 self._logger.debug(
                     f"Found match at 0x{search_result:016x}")
                 if address_filter(search_result):
-                    pointer_candidates.append(int(search_result))
+                    pointer_candidates.append(Address(search_result))
                 else:
                     self._logger.debug(f"Excluding address 0x{search_result:016x} due to filtering.")
                 search_start = search_result + len(value)
@@ -181,12 +182,12 @@ class GdbBuiltInSearch(MemorySearchImpl):
 
     def exact(
             self,
-            search_areas: List[Tuple[int, int]],
-            value: bytes,
-            address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
-    ) -> List[int]:
+            search_areas: List[Tuple[Address, Address]],
+            value: Buffer,
+            address_filter: AddressPredicate = MemorySearchImpl.address_filter_true,
+    ) -> List[Address]:
         total_length = sum([end - start for start, end in search_areas])
-        pointer_candidates: List[int] = []
+        pointer_candidates: List[Address] = []
 
         with tqdm.tqdm(
                 total=total_length,
@@ -214,15 +215,15 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
 
     @staticmethod
     def _search_range(
-            start: int, end: int,
-            memory: Union[memoryview | bytes],
+            start: Address, end: Address,
+            memory: Buffer,
             granularity: int,
-            value_filter: Callable[[bytes], bool],
-            address_filter: Callable[[int], bool],
-    ) -> List[int]:
+            value_filter: ValuePredicate,
+            address_filter: AddressPredicate,
+    ) -> List[Address]:
         area_size = end - start
         value_start_offsets = range(0, area_size, granularity)
-        candidates: List[int] = []
+        candidates: List[Address] = []
 
         for value_start_offset in value_start_offsets:
             value_address = start + value_start_offset
@@ -240,11 +241,11 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
 
     def _search_range_mp(
             self,
-            start: int, end: int,
+            start: Address, end: Address,
             granularity: int,
-            value_filter: Callable[[bytes], bool],
-            address_filter: Callable[[int], bool],
-    ) -> List[int]:
+            value_filter: ValuePredicate,
+            address_filter: AddressPredicate,
+    ) -> List[Address]:
         # Always perform granularity-aligned splits
         effective_split = self._split_size // granularity * granularity
 
@@ -277,13 +278,13 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
 
     def filter(
             self,
-            search_areas: List[Tuple[int, int]],
+            search_areas: List[Tuple[Address, Address]],
             granularity: int,
-            value_filter: Callable[[bytes], bool],
-            address_filter: Callable[[int], bool] = MemorySearchImpl.address_filter_true,
-    ) -> List[int]:
+            value_filter: ValuePredicate,
+            address_filter: AddressPredicate = MemorySearchImpl.address_filter_true,
+    ) -> List[Address]:
         total_length = sum([end - start for start, end in search_areas])
-        pointer_candidates: List[int] = []
+        pointer_candidates: List[Address] = []
 
         with tqdm.tqdm(
                 total=total_length,
