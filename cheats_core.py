@@ -5,15 +5,16 @@
 
 import logging
 import struct
+import sys
+from contextlib import AbstractContextManager
+from enum import Enum
 from time import sleep
-
-_logger = logging.getLogger("core")
+from typing import Optional, List, Dict, Tuple, Literal, Union
 
 import gdb
 import tqdm
-from contextlib import AbstractContextManager
-from typing import Optional, List, Dict, Tuple, Literal, Union
-from enum import Enum
+
+_logger = logging.getLogger("core")
 
 
 class InferiorState(AbstractContextManager):
@@ -42,7 +43,8 @@ class InferiorState(AbstractContextManager):
         if self.inferior.pid == 0:
             raise ValueError("Inferior is not running.")
 
-        self.was_running = any(t.is_running() for t in self.inferior.threads() if t.is_valid())
+        self.was_running = any(t.is_running()
+                               for t in self.inferior.threads() if t.is_valid())
         if self.was_running == self.should_run:
             # Do nothing
             return
@@ -244,15 +246,18 @@ class VariableDefinition:
         """ Set value to buffer """
         process = gdb.selected_inferior()
         buffer = self.value_type.to_buffer(value)
-        process.write_memory(self.address, buffer, self.value_type.length_bytes)
+        process.write_memory(self.address, buffer,
+                             self.value_type.length_bytes)
 
     def get(self) -> Optional[Tuple[Union[int, float], str]]:
         """ Get value from buffer """
         process = gdb.selected_inferior()
         try:
-            buffer = bytes(process.read_memory(self.address, self.value_type.length_bytes))
+            buffer = bytes(process.read_memory(
+                self.address, self.value_type.length_bytes))
         except gdb.MemoryError:
-            _logger.error(f"Failed to get value from variable {self.name} at 0x{self.address:016x}")
+            _logger.error(
+                f"Failed to get value from variable {self.name} at 0x{self.address:016x}")
             return None
 
         value = self.value_type.from_buffer(buffer)
@@ -431,7 +436,8 @@ class SearchSession:
         if self.pointer_candidates is None:
             byte_pattern = self.value_type.to_buffer(target_value)
             self.pointer_candidates = []
-            _logger.info(f"Searching for byte pattern: {self.value_type.to_readable(target_value)}")
+            _logger.info(
+                f"Searching for byte pattern: {self.value_type.to_readable(target_value)}")
 
             with tqdm.tqdm(total=sum(map(len, search_segments)),
                            desc="Searching memory",
@@ -448,26 +454,32 @@ class SearchSession:
                             break
 
                         try:
-                            search_result = self.inferior.search_memory(search_start, search_length, byte_pattern)
+                            search_result = self.inferior.search_memory(
+                                search_start, search_length, byte_pattern)
                         except gdb.MemoryError as e:
                             _logger.error(f"Skipping unreadable segment {segment.start:016x}-{segment.end:016x}!",
                                           exc_info=e)
-                            _logger.info("You may want to rediscover segments and try again.")
+                            _logger.info(
+                                "You may want to rediscover segments and try again.")
                             continue
                         except ValueError as e:
-                            _logger.error(f"Skipping segment {segment.start:016x}-{segment.end:016x}!", exc_info=e)
+                            _logger.error(
+                                f"Skipping segment {segment.start:016x}-{segment.end:016x}!", exc_info=e)
                             continue
 
                         if search_result is None:
                             break
                         else:
-                            _logger.debug(f"Found match at 0x{search_result:016x}")
+                            _logger.debug(
+                                f"Found match at 0x{search_result:016x}")
                             self.pointer_candidates.append(int(search_result))
                         search_start = search_result + self.value_type.length_bytes
-            _logger.info(f"Found {len(self.pointer_candidates)} memory pointer candidates")
+            _logger.info(
+                f"Found {len(self.pointer_candidates)} memory pointer candidates")
             self.last_search_value = target_value
         else:
-            _logger.error(f"Search session has already been populated. Skipping.")
+            _logger.error(
+                f"Search session has already been populated. Skipping.")
 
         return len(self.pointer_candidates)
 
@@ -482,7 +494,8 @@ class SearchSession:
             return self.populate(target_value)
 
         if len(self.pointer_candidates) == 0:
-            _logger.info(f"No candidates remaining. You may want to reset and restart this search.")
+            _logger.info(
+                f"No candidates remaining. You may want to reset and restart this search.")
             return 0
 
         if target_value is None:
@@ -493,12 +506,14 @@ class SearchSession:
             return 0
 
         target_byte_pattern = self.value_type.to_buffer(target_value)
-        _logger.info(f"Searching for byte pattern: {self.value_type.to_readable(target_byte_pattern)}")
+        _logger.info(
+            f"Searching for byte pattern: {self.value_type.to_readable(target_byte_pattern)}")
 
         remaining_candidates: List[int] = []
         for candidate in tqdm.tqdm(self.pointer_candidates, desc="Narrowing down", unit="items"):
             try:
-                current_pattern = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
+                current_pattern = bytes(self.inferior.read_memory(
+                    candidate, self.value_type.length_bytes))
             except gdb.MemoryError:
                 # This memory might have been remapped. Consider this candidate eliminated
                 _logger.debug(f"Eliminating candidate 0x{candidate:016x}")
@@ -512,7 +527,8 @@ class SearchSession:
 
         self.pointer_candidates = remaining_candidates
         if len(remaining_candidates) > 1:
-            _logger.info(f"{len(remaining_candidates)} memory pointer candidates remaining.")
+            _logger.info(
+                f"{len(remaining_candidates)} memory pointer candidates remaining.")
         elif len(remaining_candidates) == 1:
             _logger.info(
                 f"Only 1 memory pointer candidate remaining. You may want to watch this value to confirm behavior.")
@@ -538,7 +554,8 @@ class SearchSession:
         current_values: List[Tuple[int, Union[int, float], str]] = []
 
         for candidate in self.pointer_candidates:
-            buffer = bytes(self.inferior.read_memory(candidate, self.value_type.length_bytes))
+            buffer = bytes(self.inferior.read_memory(
+                candidate, self.value_type.length_bytes))
             value = self.value_type.from_buffer(buffer)
             buffer_string = self.value_type.to_readable(value)
             current_values.append((candidate, value, buffer_string))
@@ -561,11 +578,13 @@ class SearchSession:
             print(f"Search state")
             search_state = self.search_state()
             if from_tty and len(search_state) > self.max_print_limit > 0:
-                print(f"  {len(search_state)} candidate variables found. Narrow further to show values.")
+                print(
+                    f"  {len(search_state)} candidate variables found. Narrow further to show values.")
             else:
                 for index, candidate in enumerate(search_state):
                     address, value, hex_string = candidate
-                    print(f"[{index:>4}] 0x{address:016x} {value:>16} {hex_string}")
+                    print(
+                        f"[{index:>4}] 0x{address:016x} {value:>16} {hex_string}")
         else:
             print(f"Search state             Unpopulated")
 
@@ -582,16 +601,19 @@ class SearchSession:
             return None
 
         if len(self.pointer_candidates) > 1 and address is None:
-            _logger.error("More than 1 results found. Please choose one to create variable.")
+            _logger.error(
+                "More than 1 results found. Please choose one to create variable.")
             return None
         elif len(self.pointer_candidates) == 0:
-            _logger.error("No candidates remaining. Please reset and restart this search with different values.")
+            _logger.error(
+                "No candidates remaining. Please reset and restart this search with different values.")
             return None
 
         if len(self.pointer_candidates) == 1:
             address = self.pointer_candidates[0]
         elif address not in self.pointer_candidates:
-            _logger.error(f"Requested address 0x{address:016x} is not in the search results.")
+            _logger.error(
+                f"Requested address 0x{address:016x} is not in the search results.")
             self.summarize(from_tty=True)
             return None
 
@@ -609,7 +631,8 @@ class CheatSession:
 
     def __init__(self):
         self.variables: List[VariableDefinition] = []
-        self.watchpoints: Dict[VariableDefinition, LockedValueWatchpoint] = dict()
+        self.watchpoints: Dict[VariableDefinition,
+                               LockedValueWatchpoint] = dict()
         self.current_search: Optional[SearchSession] = None
 
         _logger.info("Initializing cheat session.")
@@ -631,7 +654,8 @@ class CheatSession:
                              not segment.file_backed and segment.writable and segment.readable and len(segment) > 0]
 
         _logger.info("Found {} segments.".format(len(process_segments)))
-        _logger.info("Found {} segments containing runtime data.".format(len(eligible_segments)))
+        _logger.info("Found {} segments containing runtime data.".format(
+            len(eligible_segments)))
 
         return eligible_segments
 
@@ -639,15 +663,18 @@ class CheatSession:
         if variable in self.watchpoints.keys():
             old_watchpoint = self.watchpoints.pop(variable)
             old_watchpoint.delete()
-            _logger.info(f"Replacing existing watchpoint {old_watchpoint}={old_watchpoint.value}")
+            _logger.info(
+                f"Replacing existing watchpoint {old_watchpoint}={old_watchpoint.value}")
 
-        _logger.info(f"Creating new watchpoint {variable} with value 0x{value:08x}.")
+        _logger.info(
+            f"Creating new watchpoint {variable} with value 0x{value:08x}.")
         self.watchpoints[variable] = LockedValueWatchpoint(variable, value)
 
     def variable_lock_enable(self, variable: VariableDefinition) -> None:
         watchpoint = self.watchpoints.get(variable, None)
         if watchpoint is None:
-            _logger.error(f"Variable {variable.name} is not locked by this cheat session.")
+            _logger.error(
+                f"Variable {variable.name} is not locked by this cheat session.")
             return
 
         self.watchpoints[variable].enabled = True
@@ -656,7 +683,8 @@ class CheatSession:
     def variable_lock_disable(self, variable: VariableDefinition) -> None:
         watchpoint = self.watchpoints.get(variable, None)
         if watchpoint is None:
-            _logger.error(f"Variable {variable.name} is not locked by this cheat session.")
+            _logger.error(
+                f"Variable {variable.name} is not locked by this cheat session.")
             return
 
         self.watchpoints[variable].enabled = False
@@ -667,9 +695,11 @@ class CheatSession:
             old_watchpoint = self.watchpoints.pop(variable)
             old_watchpoint.delete()
 
-            _logger.info(f"Watchpoint {variable}={old_watchpoint.value} deleted.")
+            _logger.info(
+                f"Watchpoint {variable}={old_watchpoint.value} deleted.")
         else:
-            _logger.error(f"Variable {variable.name} is not locked by this cheat session.")
+            _logger.error(
+                f"Variable {variable.name} is not locked by this cheat session.")
 
     def cleanup(self) -> None:
         _logger.info("Cleaning up cheat session.")

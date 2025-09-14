@@ -55,7 +55,8 @@ class PrefixCheat(gdb.Command):
     """
 
     def __init__(self):
-        super(PrefixCheat, self).__init__("cheat", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+        super(PrefixCheat, self).__init__(
+            "cheat", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
 
 
 class PrefixCheatSession(gdb.Command):
@@ -66,7 +67,8 @@ class PrefixCheatSession(gdb.Command):
     """
 
     def __init__(self):
-        super(PrefixCheatSession, self).__init__("cheat session", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+        super(PrefixCheatSession, self).__init__(
+            "cheat session", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
 
 
 class PrefixCheatSearch(gdb.Command):
@@ -77,7 +79,8 @@ class PrefixCheatSearch(gdb.Command):
     """
 
     def __init__(self):
-        super(PrefixCheatSearch, self).__init__("cheat search", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+        super(PrefixCheatSearch, self).__init__("cheat search",
+                                                gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
 
 
 class PrefixCheatLock(gdb.Command):
@@ -88,7 +91,8 @@ class PrefixCheatLock(gdb.Command):
     """
 
     def __init__(self):
-        super(PrefixCheatLock, self).__init__("cheat lock", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+        super(PrefixCheatLock, self).__init__("cheat lock",
+                                              gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
 
 
 class PrefixCheatVariable(gdb.Command):
@@ -99,7 +103,8 @@ class PrefixCheatVariable(gdb.Command):
     """
 
     def __init__(self):
-        super(PrefixCheatVariable, self).__init__("cheat variable", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
+        super(PrefixCheatVariable, self).__init__(
+            "cheat variable", gdb.COMMAND_USER, gdb.COMPLETE_COMMAND, True)
 
 
 # GDB Commands ================================================================
@@ -133,7 +138,8 @@ class CommandCheatSessionCreate(gdb.Command):
         # Make sure GDB don't stop on these signals and pass them to programs unchanged instead.
         _logger.info(f"Setting signal handling behavior for certain games...")
         for signal in ["SIGPWR", "SIGXCPU", "SIGUSR1", "SIGUSR2"]:
-            gdb.execute(f"handle {signal} nostop noprint noignore", from_tty=from_tty)
+            gdb.execute(
+                f"handle {signal} nostop noprint noignore", from_tty=from_tty)
 
 
 class CommandCheatSessionSummary(gdb.Command):
@@ -250,7 +256,8 @@ class CommandCheatSearchPopulate(gdb.Command):
 
         argv = gdb.string_to_argv(argument)
         if len(argv) != 1:
-            _logger.error("Usage: cheat_search_populate <initial value to search>")
+            _logger.error(
+                "Usage: cheat_search_populate <initial value to search>")
             return
 
         try:
@@ -314,7 +321,8 @@ class CommandCheatSearchNarrow(gdb.Command):
             return
 
         if parsed_args.poll < 0:
-            _logger.error(f"Polling counts must be positive: {parsed_args.poll}")
+            _logger.error(
+                f"Polling counts must be positive: {parsed_args.poll}")
             return
 
         if parsed_args.interval < 1:
@@ -405,7 +413,8 @@ class CommandCheatSearchDefineVariable(gdb.Command):
         # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) < 1:
-            _logger.error("Usage: cheat_search_variable <variable name> [search result index, default 0]")
+            _logger.error(
+                "Usage: cheat_search_variable <variable name> [search result index, default 0]")
             return
 
         index = int(argv[1]) if len(argv) > 1 else 0
@@ -418,7 +427,8 @@ class CommandCheatSearchDefineVariable(gdb.Command):
                 return
 
             address = candidates[index][0]
-            variable = _session.current_search.define_variable(argv[0], address)
+            variable = _session.current_search.define_variable(
+                argv[0], address)
 
             if variable is not None:
                 _session.variables.append(variable)
@@ -664,7 +674,8 @@ class CommandCheatVariableCreate(gdb.Command):
         # Parse and validate arguments
         argv = gdb.string_to_argv(argument)
         if len(argv) != 3:
-            _logger.error("Usage: cheat_variable_create <name> <type> <address>")
+            _logger.error(
+                "Usage: cheat_variable_create <name> <type> <address>")
             return
         name = argv[0]
         value_type = ValueType.from_short_hand(argv[1])
@@ -678,7 +689,8 @@ class CommandCheatVariableCreate(gdb.Command):
             if address in [v.address for v in _session.variables if v.valid]:
                 _logger.error(f"Address {address} already exists.")
             else:
-                _session.variables.append(VariableDefinition(name, value_type, address))
+                _session.variables.append(
+                    VariableDefinition(name, value_type, address))
 
             _session.summarize_variables()
         except Exception as e:
@@ -782,7 +794,8 @@ class CommandCheatVariableDelete(gdb.Command):
                 _session.summarize_variables()
                 return
             if variable in _session.watchpoints.keys():
-                _logger.error(f"Variable {variable} is in-use by one of the watchpoints and cannot be deleted.")
+                _logger.error(
+                    f"Variable {variable} is in-use by one of the watchpoints and cannot be deleted.")
                 _session.summarize_watchpoints()
                 return
 
