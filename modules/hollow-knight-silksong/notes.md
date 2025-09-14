@@ -3,7 +3,7 @@
 The game seems to always allocate runtime player data aligned to 4K boundaries.
 Fields are at fixed offsets relative to this player data base pointer.
 
-From player status base 0x00007f50cb624000
+## From player status base 0x00007f50cb624000
 
 Pointer to player status base found at 
 
@@ -12,30 +12,57 @@ Pointer to player status base found at
 - `0x240` u32 silk
 - `0x908` u32 bone shards
 
-From inventory base 0x00007f50cb7bb000
+## From inventory base 0x00007f50cb7bb000
 
-Pointer to inventory base found at 0x00007f50cb7b5018
+000-01f: potentially a header
+020-???: item entries? every item seems to take 24 bytes except for flea brew and plasmium phial
 
-0x00007f50cb7bb0ac - sting shard
-0x00007f50cb7bb10c - longpin
-0x00007f50cb7bb124 - flintslate
-0x00007f50cb7bb13c - boomerang
-0x00007f50cb7bb19c - straight pin
-0x00007f50cb7bb1b4 - flea brew
-0x00007f50cb7bb2a4 - cogwork wheel
-0x00007f50cb7bb304 - plasmium phial
-0x00007f50cb7bb37c - delver's drill
-0x00007f50cb7bb3c4 - cogfly
-0x00007f50cb7bb424 - silkshot
-0x00007f50cb7bb454 - tacks
-0x00007f50cb7bb46c - conchcutter
-0x00007f50cb7bb484 - throwing ring
-0x00007f50cb7bb4cc - rosary cannon
+### Inside every 24B item entry:
 
+000-007: Some pointer
+008-00b: Fixed number 0x10001 / 65537
+00c-00f: Item count as u32
+010-014: Unknown number
+015-018: 0xffffffff / -1
 
+offset below is offset of item count u32
+
+off + pointer at 0-7     + mapped item
+0ac - 0x00007f32539a50f0 - sting shard
+10c - 0x00007f32539b1f90 - longpin
+124 - 0x00007f32539b1f30 - flintslate
+13c - 0x00007f32539b1ed0 - curveclaw
+19c - 0x00007f32539b1de0 - straight pin
+
+2a4 - 0x00007f32539b19f0 - cogwork wheel
+304 - 0x00007f325398c0c0 - plasmium phial
+37c - 0x00007f32539b16f0 - delver's drill
+3c4 - 0x00007f32539b7e40 - cogfly
+424 - 0x00007f32539b7c80 - silkshot
+454 - 0x00007f32539b8dc0 - tacks
+46c - 0x00007f32539b1420 - conchcutter
+484 - 0x00007f32539b13c0 - throwing ring
+4cc - 0x00007f32539b7a80 - rosary cannon
+55c - 0x00007f3232750720 - threefold pin
+574 - 0x00007f3232750810 - pimpillo
+58c - 0x00007f3232875b00 - curvesickle
+
+### Exceptions - items with reserve
+
+000-007: Some pointer A
+008-00b: Fixed number 0x10001 / 65537
+00c-00f: Item count as u32
+010-014: Unknown number X
+015-018: 0x10 <- Others have -1
+
+1b4 - 0x00007f32539b1d80 - 7bea7f88 - flea brew
+
+### Reserves section?
 
 0x00007f50cb7dad50 - flea brew reserves
 0x00007f50cb7dad68 - plasmium phial reserves
+
+## From item base
 
 0x00007f50cb855558 - pointer to item base = 0x00007f50cb85d000
 
