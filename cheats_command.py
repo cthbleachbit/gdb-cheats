@@ -234,8 +234,8 @@ class CommandCheatSearchCreate(gdb.Command):
 
 class CommandCheatSearchPopulate(gdb.Command):
     """
-    Populate a cheat search session.
-    Usage: cheat search populate <initial value to search>
+    Populate initial pointer candidates that have the user-specified value.
+    Usage: cheat search populate [-s gdb|mp] [-a ALIGN] [-o OFFSET] <value>
     """
 
     def __init__(self):
@@ -319,7 +319,7 @@ class CommandCheatSearchPopulate(gdb.Command):
 class CommandCheatSearchNarrow(gdb.Command):
     """
     Narrow down a cheat search session.
-    Usage: cheat search narrow [--poll N] [--interval SECONDS] <value to search>
+    Usage: cheat search narrow [-p N] [-i SECONDS] [-s gdb|mp] <value to search>
     """
 
     def __init__(self):
@@ -422,7 +422,7 @@ class CommandCheatSearchNarrow(gdb.Command):
 class CommandCheatSearchSummary(gdb.Command):
     """
     Print a summary of the current cheat session.
-    Usage: cheat search summary
+    Usage: cheat search summary [-l max_print_limit]
     """
 
     def __init__(self):
