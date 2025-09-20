@@ -44,6 +44,7 @@ def define_status_vars(status_base: Address) -> None:
         "hp": (ValueType.U32, 0x21c),
         "rosaries": (ValueType.U32, 0x23c),
         "silk": (ValueType.U32, 0x240),
+        "silk_max": (ValueType.U32, 0x244),
         "bone_shards": (ValueType.U32, 0x908),
     }
 
