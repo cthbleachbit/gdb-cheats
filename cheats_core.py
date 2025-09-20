@@ -609,7 +609,6 @@ class SearchSession:
         """
         _print_limit = print_limit if print_limit is not None else self.max_print_limit
 
-
         print("=== Current search ===")
         populated = self.is_populated()
         search_type = self.value_type
@@ -673,8 +672,7 @@ class CheatSession:
 
     def __init__(self):
         self.variables: List[VariableDefinition] = []
-        self.watchpoints: Dict[VariableDefinition,
-                               LockedValueWatchpoint] = dict()
+        self.watchpoints: Dict[VariableDefinition, LockedValueWatchpoint] = dict()
         self.current_search: Optional[SearchSession] = None
 
         _logger.info("Initializing cheat session.")
@@ -769,6 +767,9 @@ class CheatSession:
         for v, watchpoint in self.watchpoints.items():
             active = "[*]" if watchpoint.enabled else "[ ]"
             print(f"{active} 0x{v.address:016x} {v.name:<20} {watchpoint.value:>16}")
+
+    def __del__(self):
+        self.cleanup()
 
 
 if __name__ == "__main__":

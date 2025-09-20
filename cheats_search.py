@@ -8,7 +8,8 @@ import functools
 import importlib
 import itertools
 import logging
-import multiprocessing as mp
+import multiprocessing
+import multiprocessing.pool
 import pprint
 from typing import Tuple, List, Optional
 
@@ -20,7 +21,13 @@ from cheats_typing import Address, Offset, Buffer, ValuePredicate, AddressPredic
 
 _logger = logging.getLogger("search")
 
+
 class MemorySearchImpl(abc.ABC):
+    """
+    Memory search interface.
+    The class defines required APIs that exposes process memory ranges.
+    """
+
     def __init__(self, inferior):
         self._gdb = importlib.import_module("gdb")
         self._logger = _logger.getChild(self.__class__.__name__)
@@ -28,14 +35,29 @@ class MemorySearchImpl(abc.ABC):
 
     @staticmethod
     def address_filter_true(address: Address) -> bool:
+        """
+        Dummy address filter that accepts all addresses.
+        Conforms to AddressPredicate signature.
+        """
         return True
 
     @staticmethod
     def address_filter_alignment_offset(address: Address, /, alignment: Offset, offset: Offset) -> bool:
+        """
+        Address filter that accepts addresses based on alignment and offset.
+        Conforms to AddressPredicate signature.
+        :param address: Address to filter - supplied during search.
+        :param alignment: Desired alignment - prepopulate with functools.partial.
+        :param offset:    Desired offset - prepopulate with functools.partial.
+        """
         return address % alignment == offset
 
     @staticmethod
     def value_filter_exact(target: Buffer, compare: Buffer) -> bool:
+        """
+        Value filter that accepts values exactly matching a target value.
+        Conforms to ValuePredicate signature.
+        """
         return bytes(target) == bytes(compare)
 
     @abc.abstractmethod
@@ -155,6 +177,8 @@ class GdbBuiltInSearch(MemorySearchImpl):
             if search_length <= 0:
                 break
 
+            # GDB only returns at most 1 result every time search_memory() is invoked.
+            # To search through the space further calls are required starting from last matching address.
             try:
                 search_result = self._inferior.search_memory(
                     search_start, search_length, value)
@@ -168,6 +192,7 @@ class GdbBuiltInSearch(MemorySearchImpl):
                 continue
 
             if search_result is None:
+                # No matches found till end of the search range
                 break
             else:
                 self._logger.debug(
@@ -211,7 +236,8 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
     def __init__(self, inferior):
         super().__init__(inferior)
         self._split_size = 16 * 1024 * 1024  # 16 MiB
-        self._mp = mp.get_context("forkserver")
+        # Must use either forkserver or spawn. Forking with running gdb threads is UB.
+        self._mp = multiprocessing.get_context("forkserver")
 
     @staticmethod
     def _search_range(
@@ -245,6 +271,7 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
             granularity: int,
             value_filter: ValuePredicate,
             address_filter: AddressPredicate,
+            mp_pool: multiprocessing.pool.Pool,
     ) -> List[Address]:
         # Always perform granularity-aligned splits
         effective_split = self._split_size // granularity * granularity
@@ -267,14 +294,12 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
             address_filter=address_filter,
         )
         try:
-            with self._mp.Pool() as pool:
-                nested_candidates = pool.starmap(mapped_function, mapped_function_params)
+            nested_candidates = mp_pool.starmap(mapped_function, mapped_function_params)
             return list(itertools.chain.from_iterable(nested_candidates))
         except Exception as e:
             _logger.error("Search failed", exc_info=e)
             pprint.pprint(search_ranges)
             return []
-
 
     def filter(
             self,
@@ -293,9 +318,10 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
                 unit_scale=True,
                 unit_divisor=1024,
         ) as progress:
-            for start, end in search_areas:
-                progress.update(end - start)
-                pointer_candidates.extend(
-                    self._search_range_mp(start, end, granularity, value_filter, address_filter))
+            with self._mp.Pool() as pool:
+                for start, end in search_areas:
+                    progress.update(end - start)
+                    pointer_candidates.extend(
+                        self._search_range_mp(start, end, granularity, value_filter, address_filter, pool))
 
         return pointer_candidates
