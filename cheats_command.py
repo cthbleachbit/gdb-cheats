@@ -47,6 +47,27 @@ def get_session() -> Optional[CheatSession]:
     return _session
 
 
+def get_or_create_session() -> CheatSession:
+    """
+    Returns the current session for automation modules
+    :return: current session
+    """
+    global _session
+    if _session is None:
+        session = CheatSession()
+        _session = session
+        return session
+    else:
+        return _session
+
+
+def set_verbose_logging(verbose: bool):
+    """
+    Set verbose logging for the cheat engine.
+    """
+    logging.getLogger().setLevel(logging.DEBUG if verbose else logging.INFO)
+
+
 # GDB Prefix Commands =========================================================
 
 class PrefixCheat(gdb.Command):
