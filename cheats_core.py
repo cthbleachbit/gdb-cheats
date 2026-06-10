@@ -88,7 +88,7 @@ class ValueType(str, Enum):
 
     @property
     def length_bytes(self) -> int:
-        """ Return the length of the value in number of bytes."""
+        """ Return the length of the value in bytes."""
         if self == ValueType.I8 or self == ValueType.U8:
             return 1
         elif self == ValueType.I16 or self == ValueType.U16:
@@ -97,6 +97,7 @@ class ValueType(str, Enum):
             return 4
         elif self == ValueType.I64 or self == ValueType.U64 or self == ValueType.F64:
             return 8
+        raise ValueError(f"Invalid value type {self}")
 
     @property
     def signed(self) -> bool:
@@ -688,6 +689,7 @@ class CheatSession:
         with open(f"/proc/{target_pid}/maps", "r") as procfs_maps:
             for line in procfs_maps.readlines():
                 segment = MemorySegment.from_proc_pid_map(line)
+                _logger.debug(f"Discovered segment: {segment}")
                 process_segments.append(segment)
 
         eligible_segments = [segment for segment in process_segments if
