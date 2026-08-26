@@ -8,11 +8,13 @@ all: interactive
 # Compile targets
 # =================================================
 
+CXXFLAGS :=
+
 bin_mock_program: mock_program.cpp thread_background.h thread_update.h mock_program.h
-	g++ -O2 -s -Wall --std=gnu++23 $^ -o $@
+	g++ -O2 -s -Wall --std=gnu++23 $(CXXFLAGS) $^ -o $@
 
 bin_mock_program_debug: mock_program.cpp thread_background.h thread_update.h mock_program.h
-	g++ -O0 -ggdb -Wall --std=gnu++23 $^ -o $@
+	g++ -O0 -ggdb -Wall --std=gnu++23 $(CXXFLAGS) $^ -o $@
 
 # =================================================
 # Test targets
