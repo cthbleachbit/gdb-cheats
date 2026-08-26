@@ -11,7 +11,7 @@ import logging
 import multiprocessing
 import multiprocessing.pool
 import pprint
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 
 # gdb is an embedded module - not available under MP forkserver / spawn.
 # import gdb
@@ -64,7 +64,7 @@ class MemorySearchImpl(abc.ABC):
     def filter(
             self, search_areas: List[Tuple[Address, Address]],
             granularity: int,
-            value_filter: Optional[ValuePredicate],
+            value_filter: ValuePredicate,
             address_filter: AddressPredicate = address_filter_true,
     ) -> List[Address]:
         """
