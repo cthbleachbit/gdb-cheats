@@ -71,16 +71,16 @@ class InferiorState(AbstractContextManager):
 
 
 class ValueType(str, Enum):
-    I8 = "char",
-    I16 = "short",
-    I32 = "int",
-    I64 = "long",
-    U8 = "unsigned char",
-    U16 = "unsigned short",
-    U32 = "unsigned int",
-    U64 = "unsigned long",
-    F32 = "float",
-    F64 = "double",
+    I8 = "char"
+    I16 = "short"
+    I32 = "int"
+    I64 = "long"
+    U8 = "unsigned char"
+    U16 = "unsigned short"
+    U32 = "unsigned int"
+    U64 = "unsigned long"
+    F32 = "float"
+    F64 = "double"
 
     def format_spec(self, address: Address) -> str:
         """ Format to gdb acceptable spec """
