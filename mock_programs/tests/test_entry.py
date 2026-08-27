@@ -6,11 +6,10 @@
 
 
 import gdb
-
-from cheats_command import set_verbose_logging
+import logging
 
 if __name__ == "__main__":
-    set_verbose_logging(True)
+    logging.getLogger().setLevel(logging.DEBUG)
     # Setup breakpoints\
     gdb.execute("break mock_program.cpp:45")
     gdb.execute("run")

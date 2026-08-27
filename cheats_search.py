@@ -242,8 +242,10 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
     def __init__(self, inferior):
         super().__init__(inferior)
         self._split_size = 16 * 1024 * 1024  # 16 MiB
-        # Must use either forkserver or spawn. Forking with running gdb threads is UB.
-        self._mp = multiprocessing.get_context("forkserver")
+        # Forcing fork so that built-in types carry over.
+        # Access to the inferior is, however, not possible here.
+        # No GDB APIs may be used inside the multiprocessing pool.
+        self._mp = multiprocessing.get_context("fork")
 
     @staticmethod
     def _search_range(
