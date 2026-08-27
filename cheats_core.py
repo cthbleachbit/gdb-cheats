@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0
-
-# GDB Cheats - Core types
-
 import logging
 import struct
 import sys
@@ -15,6 +12,9 @@ import gdb
 
 from cheats_search import GdbBuiltInSearch, MemorySearchImpl, MultiProcessingSearchImpl
 from cheats_typing import Address, Buffer, Numeric, Offset, AddressPredicate, ValuePredicate
+from cheats_utilities import ConstantResolver
+
+# GDB Cheats - Core types
 
 _logger = logging.getLogger("core")
 
@@ -120,17 +120,17 @@ class ValueType(str, Enum):
     @property
     def is_integral(self) -> bool:
         """ Return True if the value is integer. """
-        return self and self != ValueType.F32 and self != ValueType.F64
+        return bool(self) and self != ValueType.F32 and self != ValueType.F64
 
     @property
     def is_floating_point(self) -> bool:
-        """ Return True if the value is floating point. """
-        return self and self == ValueType.F32 and self == ValueType.F64
+        """ Return True if the value is a floating point. """
+        return bool(self) and self == ValueType.F32 and self == ValueType.F64
 
     @staticmethod
     def from_short_hand(notation: str) -> Optional["ValueType"]:
         """
-        Parse a user specified type string to enum value.
+        Parse a user-specified type string to enum value.
         :param notation: user input
         :return:     Value type enum if parsed successfully. otherwise None
         """
@@ -267,7 +267,7 @@ class VariableDefinition:
         buffer_string = self.value_type.to_readable(value)
         return value, buffer_string
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, VariableDefinition):
             return False
         return self.name == other.name and self.value_type == other.value_type and self.address == other.address and self.valid == other.valid
@@ -352,7 +352,7 @@ class MemorySegment:
         self.pathname = pathname
 
     @staticmethod
-    def from_proc_pid_map(line: str) -> Optional["MemorySegment"]:
+    def from_proc_pid_map(line: str) -> "MemorySegment":
         """
         Parse a memory segment from a proc pid map.
         :param line: line from proc fs pid map
@@ -387,8 +387,12 @@ class MemorySegment:
     def readable(self) -> bool:
         return self.permissions.r
 
-    def __len__(self) -> int:
+    @property
+    def length(self) -> int:
         return self.end - self.start
+
+    def __len__(self) -> int:
+        return self.length
 
     def __str__(self):
         return f"{self.start:016x}-{self.end:016x} {self.permissions} {self.offset:016x} {self.pathname}"
@@ -403,7 +407,7 @@ class MemorySegment:
 class SearchSession:
     """ Records search progress for a particular variable """
 
-    def __init__(self, value_type: ValueType):
+    def __init__(self, value_type: ValueType, libc_constants: Optional[ConstantResolver] = None):
         """
         Create a new search session which records search progress for a particular variable.
         :param value_type: Type for this variable
@@ -412,6 +416,7 @@ class SearchSession:
         self.candidates: Optional[List[int]] = None
         self.inferior = gdb.selected_inferior()
         self.last_search_value: Union[int, Literal["custom filter"], None] = None
+        self.libc_constants = libc_constants or ConstantResolver()
 
         self._max_print_limit: int = 0
 
@@ -427,6 +432,65 @@ class SearchSession:
     @max_print_limit.setter
     def max_print_limit(self, value: int) -> None:
         self._max_print_limit = value
+
+    def madvise_undo_guard(self, segments: List[MemorySegment]):
+        """
+        Issue madvise MADV_REMOVE_GUARD on provided address ranges.
+
+        From glibc 2.42 and up stack guard no longer exists as PROT_NONE segments.
+        Instead, protection pages are mixed into apparently readable segments with MADV_GUARD_INSTALL set.
+        Upon page fault on access, the kernel looks at madvise flags and segmentation faults the process.
+        A workaround was added to core dump command `gcore` to skip unreadable pages, but memory search
+        never got this workaround.
+
+        Reference: commit c1da013915e93155ddeedb2aea50ce3e29689e17 at binutils-gdb.git
+
+        We don't really care too much about integrity, so ask gdb to evaluate madvise syscalls to
+        forcefully strip the guard flag.
+        """
+
+        MADV_GUARD_REMOVE = self.libc_constants.constant_resolve("MADV_GUARD_REMOVE", ["sys/mman.h"])
+
+        if MADV_GUARD_REMOVE is None:
+            _logger.warning("Failed to resolve MADV_GUARD_REMOVE constant. This may cause memory search to fail.")
+
+        for segment in segments:
+            _logger.info(f"Stripping guard pages for {str(segment)}")
+            try:
+                madvise_return = int(
+                    gdb.parse_and_eval(f"(int) madvise({segment.start}, {segment.length}, {MADV_GUARD_REMOVE})"))
+            except gdb.error:
+                _logger.warning(f"Failed to evaluate madvise syscall for {str(segment)}")
+                continue
+
+            if madvise_return != 0:
+                _logger.warning(f"madvise syscall returned {madvise_return} for {str(segment)}")
+
+        return
+
+    def discover_segments(self) -> List[MemorySegment]:
+        target_pid = gdb.selected_inferior().pid
+        if not target_pid:
+            _logger.error("No target PID.")
+            return []
+
+        process_segments = []
+        with open(f"/proc/{target_pid}/maps", "r") as procfs_maps:
+            for line in procfs_maps.readlines():
+                segment = MemorySegment.from_proc_pid_map(line)
+                _logger.debug(f"Discovered segment: {segment}")
+                process_segments.append(segment)
+
+        eligible_segments = [segment for segment in process_segments if
+                             not segment.file_backed and segment.writable and segment.readable and len(segment) > 0]
+
+        _logger.info("Found {} segments.".format(len(process_segments)))
+        _logger.info("Found {} segments containing runtime data.".format(
+            len(eligible_segments)))
+
+        self.madvise_undo_guard(eligible_segments)
+
+        return eligible_segments
 
     def populate(
             self,
@@ -449,7 +513,7 @@ class SearchSession:
         else:
             raise ValueError(f"Unknown search implementation: {search_impl}")
 
-        search_segments = CheatSession.discover_segments()
+        search_segments = self.discover_segments()
 
         if not search_segments:
             _logger.error(f"No segments found!")
@@ -505,7 +569,7 @@ class SearchSession:
 
         _search_impl: MemorySearchImpl = self.get_search_impl(search_impl)
 
-        search_segments = CheatSession.discover_segments()
+        search_segments = self.discover_segments()
 
         if not search_segments:
             _logger.error(f"No segments found!")
@@ -665,7 +729,7 @@ class SearchSession:
         return self.candidates is not None
 
     def __len__(self) -> int:
-        return len(self.candidates)
+        return len(self.candidates or [])
 
 
 class CheatSession:
@@ -675,31 +739,9 @@ class CheatSession:
         self.variables: List[VariableDefinition] = []
         self.watchpoints: Dict[VariableDefinition, LockedValueWatchpoint] = dict()
         self.current_search: Optional[SearchSession] = None
+        self.libc_constants = ConstantResolver()
 
         _logger.info("Initializing cheat session.")
-
-    @staticmethod
-    def discover_segments() -> List[MemorySegment]:
-        target_pid = gdb.selected_inferior().pid
-        if not target_pid:
-            _logger.error("No target PID.")
-            return []
-
-        process_segments = []
-        with open(f"/proc/{target_pid}/maps", "r") as procfs_maps:
-            for line in procfs_maps.readlines():
-                segment = MemorySegment.from_proc_pid_map(line)
-                _logger.debug(f"Discovered segment: {segment}")
-                process_segments.append(segment)
-
-        eligible_segments = [segment for segment in process_segments if
-                             not segment.file_backed and segment.writable and segment.readable and len(segment) > 0]
-
-        _logger.info("Found {} segments.".format(len(process_segments)))
-        _logger.info("Found {} segments containing runtime data.".format(
-            len(eligible_segments)))
-
-        return eligible_segments
 
     def variable_lock_create(self, variable: VariableDefinition, value: Numeric) -> None:
         if variable in self.watchpoints.keys():

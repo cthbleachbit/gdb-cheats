@@ -196,7 +196,7 @@ class CommandCheatSessionSummary(gdb.Command):
 
 class CommandCheatSessionDelete(gdb.Command):
     """
-    Clean up current cheat session. Remove all variables and watchpoints.
+    Clean up the current cheat session. Remove all variables and watchpoints.
     Usage: cheat session delete
     """
 
@@ -249,7 +249,7 @@ class CommandCheatSearchCreate(gdb.Command):
             _logger.error(f"Unknown value type: {argv[0]}")
             return
 
-        _session.current_search = SearchSession(value_type)
+        _session.current_search = SearchSession(value_type, libc_constants=_session.libc_constants)
         _session.current_search.max_print_limit = 100
 
 

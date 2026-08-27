@@ -194,14 +194,20 @@ class GdbBuiltInSearch(MemorySearchImpl):
             if search_result is None:
                 # No matches found till end of the search range
                 break
+
+            # GDB search_memory() returns gibberish if the memory search fails to read the memory.
+            # At least check if the search result is a valid address inside the search range.
+            if search_result < search_start or search_result >= search_end:
+                self._logger.error(f'Area address 0x{search_result:016x}+{search_length:016x} is not accessible!')
+                break
+
+            self._logger.debug(
+                f"Found match at 0x{search_result:016x}")
+            if address_filter(search_result):
+                pointer_candidates.append(Address(search_result))
             else:
-                self._logger.debug(
-                    f"Found match at 0x{search_result:016x}")
-                if address_filter(search_result):
-                    pointer_candidates.append(Address(search_result))
-                else:
-                    self._logger.debug(f"Excluding address 0x{search_result:016x} due to filtering.")
-                search_start = search_result + len(value)
+                self._logger.debug(f"Excluding address 0x{search_result:016x} due to filtering.")
+            search_start = search_result + len(value)
 
         return pointer_candidates
 
