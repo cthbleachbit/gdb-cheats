@@ -33,7 +33,7 @@ class ConstantResolver:
         """
         Compile and run the given source code.
 
-        May raise
+        May raise EnvironmentError if the compilation fails.
         """
 
         test_source = "".join([line + "\n" for line in source])
@@ -41,7 +41,7 @@ class ConstantResolver:
         with NamedTemporaryFile("r+", suffix=".elf", delete_on_close=False) as test_elf:
             test_elf.close()
             gcc_process = subprocess.Popen(
-                ["gcc", "-x", "c", "-", "-o", test_elf.name],
+                ["gcc", "-x", "c", "-", "-std=c11", "-o", test_elf.name],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -65,6 +65,8 @@ class ConstantResolver:
     def constant_resolve(self, name: str, includes: Optional[List[str]] = None) -> Optional[int]:
         """
         Invokes compiler to resolve a preprocessor-defined constant.
+
+        If the compiler fails, this returns None.
         """
 
         if name in self._constants.keys():
@@ -77,7 +79,11 @@ class ConstantResolver:
         lines.extend([f"#include <{header}>" for header in includes])
         lines.append("int main() { printf(\"%d\\n\", " + name + "); }")
 
-        resolved_constant = self.compile_and_run(lines)
+        try:
+            resolved_constant = self.compile_and_run(lines)
+        except EnvironmentError as e:
+            _logger.error(f"Failed to compile constant resolve code:\n{e}", exc_info=e)
+            resolved_constant = None
 
         self._constants[name] = resolved_constant
 
