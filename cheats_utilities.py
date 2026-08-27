@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0
+
 """
 Utilities that do not interface with gdb.
 """

@@ -1,7 +1,8 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0
 
-# GDB Cheats - GDB Command Frontend
+"""
+GDB Cheats - Frontend / User-facing commands
+"""
 
 import argparse
 import functools

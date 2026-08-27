@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0
 
-# GDB Cheats - Modular memory search interface
+"""
+GDB Cheats - Modular memory search interface
+"""
 
 import abc
 import functools

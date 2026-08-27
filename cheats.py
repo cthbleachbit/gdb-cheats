@@ -10,27 +10,39 @@ import shutil
 import sys
 from pathlib import Path
 
-import gdb
+def loader_entrypoint():
+    """
+    Entry point for the GDB cheats script.
+    """
+    try:
+        import gdb
+    except ImportError:
+        logging.error("GDB API is not accessible. Is `cheats.py` sourced from gdb?")
+        return
 
-# Append script directory
-if str(Path(__file__).parent) not in sys.path:
-    sys.path.append(str(Path(__file__).parent))
+    # Append script directory
+    if str(Path(__file__).parent) not in sys.path:
+        sys.path.append(str(Path(__file__).parent))
 
-# Load actual commands and start action
-from cheats_command import register_gdb_commands
+    # Load actual commands and start action
+    from cheats_command import register_gdb_commands
 
-logging.basicConfig(level=logging.INFO)
-_logger = logging.getLogger("loader")
+    logging.basicConfig(level=logging.INFO)
+    _logger = logging.getLogger("loader")
 
-try:
-    # Workaround multiprocessing.spawn looking for /usr/bin/python (which is 2.7 on some systems)
-    which_python = shutil.which(f"python{sys.version_info.major}.{sys.version_info.minor}")
-    if not which_python:
-        raise ValueError("Cannot determine python executable.")
-    mp.set_executable(which_python)
+    try:
+        # Workaround multiprocessing.spawn looking for /usr/bin/python (which is 2.7 on some systems)
+        which_python = shutil.which(f"python{sys.version_info.major}.{sys.version_info.minor}")
+        if not which_python:
+            raise ValueError("Cannot determine python executable.")
+        mp.set_executable(which_python)
 
-    # Register commands and initialize session
-    register_gdb_commands()
-    gdb.execute("cheat session create")
-except Exception as e:
-    logging.error("Cheat engine failed to initialize due to error.", exc_info=e)
+        # Register commands and initialize session
+        register_gdb_commands()
+        gdb.execute("cheat session create")
+    except Exception as e:
+        logging.error("Cheat engine failed to initialize.", exc_info=e)
+
+
+if __name__ == "__main__":
+    loader_entrypoint()
