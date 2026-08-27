@@ -1,3 +1,7 @@
+"""
+Utilities that do not interface with gdb.
+"""
+
 import logging
 import subprocess
 from tempfile import NamedTemporaryFile
