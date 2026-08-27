@@ -3,19 +3,137 @@
 The game seems to always allocate runtime player data aligned to 4K boundaries.
 Fields are at fixed offsets relative to this player data base pointer.
 
+Note: At the time of writing the following observation is on game version 
+1.0.30000
+
+
 ## From player status base 0x00007f50cb624000
 
-Pointer to player status base found at 
+HP: +0x224
 
-- `0x21c` u32 current hp
-- `0x23c` u32 rosaries
-- `0x240` u32 silk
-- `0x908` u32 bone shards
+### Locating the player status base address
+
+Taking damage:
+
+```
+0x0000000041928d24	41 89 84 24 24 02 00 00
+    mov dword ptr [r12 + 0x224], eax
+0x0000000041928d2c	EB 13
+    jmp 0x41928d41
+0x0000000041928d2e  49 63 84 24 24 02 00 00
+    movsxd rax, dword ptr [r12 + 0x224]
+    
+# Subtracting damage points
+0x0000000041928d36	41 2B C5	
+    sub eax, r13d
+
+# Saving new HP to player status struct + 0x224
+0x0000000041928d39	41 89 84 24 24 02 00 00
+    mov dword ptr [r12 + 0x224], eax
+
+# Watch point fires here.
+0x0000000041928d41	48 8B 1C 24
+    mov rbx, qword ptr [rsp]
+0x0000000041928d45	48 8B 6C 24 08
+    mov rbp, qword ptr [rsp + 8]
+0x0000000041928d4a	4C 8B 64 24 10
+    mov r12, qword ptr [rsp + 0x10]
+0x0000000041928d4f	4C 8B 6C 24 18
+    mov r13, qword ptr [rsp + 0x18]
+0x0000000041928d54	4C 8B 7C 24 20
+    mov r15, qword ptr [rsp + 0x20]
+0x0000000041928d59	48 83 C4 58
+    add rsp, 0x58
+0x0000000041928d5d	C3
+    ret
+```
+
+Restoring health (on a bench)
+
+```
+0x00000000417ec4b5	38 02
+    cmp byte ptr [rdx], al
+0x00000000417ec4b7	00 00
+    add byte ptr [rax], al
+0x00000000417ec4b9	49 8B FF
+    mov rdi, r15
+0x00000000417ec4bc	66 66 90
+    nop
+
+# Get rest-at-bench HP
+0x00000000417ec4bf	E8 2C 00 00 00
+    call 0x417ec4f0
+
+# Saving new HP to player status struct + 0x224
+0x00000000417ec4c4	41 89 87 24 02 00 00
+    mov dword ptr [r15 + 0x224], eax
+    
+0x00000000417ec4cb	4C 8B 3C 24
+    mov r15, qword ptr [rsp]
+0x00000000417ec4cf	48 83 C4 08
+    add rsp, 8
+0x00000000417ec4d3	C3
+    ret
+```
+
+Consuming silk (needolin)
+
+```
+0x00000000417ec4b5	49 63 86 48 02 00 00
+    movsxd rax, dword ptr [r14 + 0x248]
+0x00000000417ec4bc  2B 44 24 08
+    sub eax, dword ptr [rsp + 8]
+0x00000000417ec4c0	33 C9
+    xor ecx, ecx
+0x00000000417ec4c2	3B C1
+    cmp eax, ecx
+0x00000000417ec4c4	0F 4C C1
+    cmovl eax, ecx
+    
+# Saves modified silk level
+0x00000000417ec4c7	41 89 86 48 02 00 00
+    mov dword ptr [r14 + 0x248], eax
+    
+0x00000000417ec4ce	4C 8B 34 24
+    mov r14, qword ptr [rsp]
+0x00000000417ec4d2	48 83 C4 18
+    add rsp, 0x18
+0x00000000417ec4d6	C3
+    ret
+```
+
+Recovering silk
+```
+0x00000000417ec4b5	4C 89 7C 24 08
+    mov qword ptr [rsp + 8], r15
+0x00000000417ec4ba	4C 8B F7
+    mov r14, rdi
+0x00000000417ec4bd	4C 8B FE
+    mov r15, rsi
+0x00000000417ec4c0	49 63 86 48 02 00 00
+    movsxd rax, dword ptr [r14 + 0x248]
+0x00000000417ec4c7	89 44 24 10
+    mov dword ptr [rsp + 0x10], eax
+0x00000000417ec4cb	49 63 86 48 02 00 00
+    movsxd rax, dword ptr [r14 + 0x248]
+    
+# Charge silk
+0x00000000417ec4d2	41 03 C7
+    add eax, r15d
+    
+# Write silk to player status struct
+0x00000000417ec4d5	41 89 86 48 02 00 00
+    mov dword ptr [r14 + 0x248], eax
+```
+
 
 ## From inventory base 0x00007f50cb7bb000
 
 000-01f: potentially a header
 020-???: item entries? every item seems to take 24 bytes except for flea brew and plasmium phial
+
+The item slots seems to be allocated in the order the player received them in
+the game, and consequently not portable across save files.
 
 ### Inside every 24B item entry:
 
