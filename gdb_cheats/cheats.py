@@ -8,7 +8,7 @@ import logging
 import multiprocessing as mp
 import shutil
 import sys
-from pathlib import Path
+
 
 def loader_entrypoint():
     """
@@ -20,12 +20,8 @@ def loader_entrypoint():
         logging.error("GDB API is not accessible. Is `cheats.py` sourced from gdb?")
         return
 
-    # Append script directory
-    if str(Path(__file__).parent) not in sys.path:
-        sys.path.append(str(Path(__file__).parent))
-
     # Load actual commands and start action
-    from cheats_command import register_gdb_commands
+    from gdb_cheats.command import register_gdb_commands
 
     logging.basicConfig(level=logging.INFO)
     _logger = logging.getLogger("loader")

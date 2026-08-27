@@ -5,10 +5,10 @@ import functools
 import logging
 from typing import Dict, Tuple
 
-from cheats_command import get_session
-from cheats_core import SearchSession, ValueType, VariableDefinition
-from cheats_search import MemorySearchImpl
-from cheats_typing import Address, Offset
+from gdb_cheats.command import get_session
+from gdb_cheats.core import SearchSession, ValueType, VariableDefinition
+from gdb_cheats.search import MemorySearchImpl
+from gdb_cheats.utilities import Address, Offset
 
 _logger = logging.getLogger("silksong")
 
@@ -29,7 +29,8 @@ def search_status_var(hp: int) -> None:
     search = get_session().current_search
     if search is None or len(search.search_state()) == 0:
         get_session().current_search = SearchSession(ValueType.U32)
-        get_session().current_search.populate_filter(search_impl="mp", target_filter=hp_value_filter, address_filter=hp_alignment_filter)
+        get_session().current_search.populate_filter(search_impl="mp", target_filter=hp_value_filter,
+                                                     address_filter=hp_alignment_filter)
     else:
         _logger.info(f"Search session already populated: {search.search_state()}")
 

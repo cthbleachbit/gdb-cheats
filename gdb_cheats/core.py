@@ -14,9 +14,8 @@ from typing import Optional, List, Dict, Tuple, Literal, Union
 
 import gdb
 
-from cheats_search import GdbBuiltInSearch, MemorySearchImpl, MultiProcessingSearchImpl
-from cheats_typing import Address, Buffer, Numeric, Offset, AddressPredicate, ValuePredicate
-from cheats_utilities import ConstantResolver
+from .search import GdbBuiltInSearch, MemorySearchImpl, MultiProcessingSearchImpl
+from .utilities import Address, Buffer, Numeric, Offset, AddressPredicate, ValuePredicate, ConstantResolver
 
 # GDB Cheats - Core types
 

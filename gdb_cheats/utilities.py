@@ -7,9 +7,17 @@ Utilities that do not interface with gdb.
 import logging
 import subprocess
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TypeAlias, Union, Callable
 
 _logger = logging.getLogger(__name__)
+
+Address: TypeAlias = int
+Offset: TypeAlias = int
+Numeric: TypeAlias = Union[int, float]
+Buffer: TypeAlias = Union[bytes, memoryview]
+
+ValuePredicate: TypeAlias = Callable[[Buffer], bool]
+AddressPredicate: TypeAlias = Callable[[Address], bool]
 
 
 class ConstantResolver:

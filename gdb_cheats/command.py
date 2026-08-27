@@ -14,8 +14,8 @@ from typing import Optional
 import gdb
 import tqdm
 
-from cheats_core import ValueType, CheatSession, SearchSession, InferiorState, VariableDefinition
-from cheats_search import MemorySearchImpl
+from .core import ValueType, CheatSession, SearchSession, InferiorState, VariableDefinition
+from .search import MemorySearchImpl
 
 _logger = logging.getLogger("command")
 

@@ -19,7 +19,7 @@ from typing import Tuple, List
 # import gdb
 import tqdm
 
-from cheats_typing import Address, Offset, Buffer, ValuePredicate, AddressPredicate
+from .utilities import Address, Offset, Buffer, ValuePredicate, AddressPredicate
 
 _logger = logging.getLogger("search")
 

@@ -5,8 +5,9 @@
 # Source this before any test cases.
 
 
-import gdb
 import logging
+
+import gdb
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)

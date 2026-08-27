@@ -1,0 +1,38 @@
+[project]
+name = "gdb_cheats"
+description = "Cheat engine GDB plugin"
+version = "0.0.1"
+authors = [
+    { name = "Tianhao Chai", email = "cth451@gmail.com" }
+]
+license = { file = "COPYING" }
+keywords = []
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "tqdm",
+]
+
+[project.scripts]
+cheats-gdb = "gdb_cheats.gdb_launcher:launch_gdb"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+dev = [
+    "types-gdb",
+]
+
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+exclude = ["tests"]

@@ -20,18 +20,18 @@ bin_mock_program_debug: mock_program.cpp thread_background.h thread_update.h moc
 # Test targets
 # =================================================
 
-GDB_CHEATS_ARGS = -iex "set pagination off" -iex "set confirm off" -ex "source ../cheats.py"
+GDB_CHEATS_ARGS = -iex "set pagination off" -iex "set confirm off"
 GDB_TESTS_ARGS = -ex "source ./tests/test_base.py" -ex "source ./tests/test_entry.py"
 
 # Interactive gdb
 .PHONY: interactive
 interactive: bin_mock_program_debug
-	gdb ./bin_mock_program_debug \
+	cheats-gdb ./bin_mock_program_debug \
 		$(GDB_CHEATS_ARGS)
 
 .PHONY: test
 test: bin_mock_program_debug
-	gdb ./bin_mock_program_debug \
+	cheats-gdb ./bin_mock_program_debug \
 		$(GDB_CHEATS_ARGS) \
 		$(GDB_TESTS_ARGS) \
  		-ex "source -s test_search_i32.py" \

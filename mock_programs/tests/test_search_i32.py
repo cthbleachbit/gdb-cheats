@@ -7,8 +7,8 @@
 import logging
 from pathlib import Path
 
-from cheats_core import SearchSession, ValueType
-from cheats_search import MemorySearchImpl
+from gdb_cheats.core import SearchSession, ValueType
+from gdb_cheats.search import MemorySearchImpl
 from testlib import stacktrace_on_error
 
 _logger = logging.getLogger(Path(__file__).name)
