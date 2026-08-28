@@ -30,7 +30,10 @@ interactive: bin_mock_program_debug
 		$(GDB_CHEATS_ARGS)
 
 .PHONY: test
-test: bin_mock_program_debug
+test: test_search_i32
+
+.PHONY: test_search_i32
+test_search_i32: bin_mock_program_debug
 	cheats-gdb ./bin_mock_program_debug \
 		$(GDB_CHEATS_ARGS) \
 		$(GDB_TESTS_ARGS) \
