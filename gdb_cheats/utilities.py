@@ -41,7 +41,7 @@ class ConstantResolver:
         with NamedTemporaryFile("r+", suffix=".elf", delete_on_close=False) as test_elf:
             test_elf.close()
             gcc_process = subprocess.Popen(
-                ["gcc", "-x", "c", "-", "-std=c11", "-o", test_elf.name],
+                ["gcc", "-x", "c", "-", "-std=gnu11", "-o", test_elf.name],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -66,7 +66,8 @@ class ConstantResolver:
         """
         Invokes compiler to resolve a preprocessor-defined constant.
 
-        If the compiler fails, this returns None.
+        If a constant is previously resolved, this returns the cached value (or None if resolution failed).
+        Otherwise, generate a small C program to print out the constant.
         """
 
         if name in self._constants.keys():

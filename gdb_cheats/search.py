@@ -236,6 +236,38 @@ class GdbBuiltInSearch(MemorySearchImpl):
         return pointer_candidates
 
 
+def _mp_worker_search_range(
+        start: Address, end: Address,
+        memory: Buffer,
+        granularity: int,
+        value_filter: ValuePredicate,
+        address_filter: AddressPredicate,
+) -> List[Address]:
+    """
+    Searches a specified range of memory for addresses matching filtering criteria.
+
+    Returns:
+        List[Address]: A list of memory addresses that satisfy the filtering criteria.
+    """
+    area_size = end - start
+    value_start_offsets = range(0, area_size, granularity)
+    candidates: List[Address] = []
+
+    for value_start_offset in value_start_offsets:
+        value_address = start + value_start_offset
+        if not address_filter(value_address):
+            continue
+
+        value_end_offset = min(value_start_offset + granularity, area_size)
+        value_buffer = memory[value_start_offset:value_end_offset]
+        if not value_filter(bytes(value_buffer)):
+            continue
+
+        candidates.append(value_address)
+
+    return candidates
+
+
 class MultiProcessingSearchImpl(MemorySearchImpl):
     """
     Python parallel search implementation
@@ -248,32 +280,6 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
         # Access to the inferior is, however, not possible here.
         # No GDB APIs may be used inside the multiprocessing pool.
         self._mp = multiprocessing.get_context("fork")
-
-    @staticmethod
-    def _search_range(
-            start: Address, end: Address,
-            memory: Buffer,
-            granularity: int,
-            value_filter: ValuePredicate,
-            address_filter: AddressPredicate,
-    ) -> List[Address]:
-        area_size = end - start
-        value_start_offsets = range(0, area_size, granularity)
-        candidates: List[Address] = []
-
-        for value_start_offset in value_start_offsets:
-            value_address = start + value_start_offset
-            if not address_filter(value_address):
-                continue
-
-            value_end_offset = min(value_start_offset + granularity, area_size)
-            value_buffer = memory[value_start_offset:value_end_offset]
-            if not value_filter(bytes(value_buffer)):
-                continue
-
-            candidates.append(value_address)
-
-        return candidates
 
     def _search_range_mp(
             self,
@@ -288,7 +294,7 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
 
         if end - start < effective_split:
             memory = self._inferior.read_memory(start, end - start)
-            return self._search_range(start, end, bytes(memory), granularity, value_filter, address_filter)
+            return _mp_worker_search_range(start, end, bytes(memory), granularity, value_filter, address_filter)
 
         # Chop up into smaller ranges
         chunk_start_offsets = list(range(start, end, effective_split))
@@ -298,7 +304,7 @@ class MultiProcessingSearchImpl(MemorySearchImpl):
         mapped_function_params = list(zip(chunk_start_offsets, chunk_end_offsets, chunks))
 
         mapped_function = functools.partial(
-            MultiProcessingSearchImpl._search_range,
+            _mp_worker_search_range,
             granularity=granularity,
             value_filter=value_filter,
             address_filter=address_filter,
