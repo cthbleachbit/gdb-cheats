@@ -4,6 +4,7 @@ import pytest
 
 from gdb_cheats.utilities import ConstantResolver
 
+
 @pytest.mark.parametrize(("constant", "includes", "expected"), [
     ("0x1234", [], 0x1234),
     ("PROT_NONE", ["sys/mman.h"], 0),

@@ -14,36 +14,34 @@ HP: +0x224
 Taking damage:
 
 ```
-0x0000000041928d24	41 89 84 24 24 02 00 00
+; 0x0000000041928d24	41 89 84 24 24 02 00 00
     mov dword ptr [r12 + 0x224], eax
-0x0000000041928d2c	EB 13
+; 0x0000000041928d2c	EB 13
     jmp 0x41928d41
-0x0000000041928d2e  49 63 84 24 24 02 00 00
+; 0x0000000041928d2e  49 63 84 24 24 02 00 00
     movsxd rax, dword ptr [r12 + 0x224]
     
-# Subtracting damage points
-0x0000000041928d36	41 2B C5	
+; Subtracting damage points
+; 0x0000000041928d36	41 2B C5	
     sub eax, r13d
 
-# Saving new HP to player status struct + 0x224
-0x0000000041928d39	41 89 84 24 24 02 00 00
+; Saving new HP to player status struct + 0x224
+; 0x0000000041928d39	41 89 84 24 24 02 00 00
     mov dword ptr [r12 + 0x224], eax
 
-# Watch point fires here.
-0x0000000041928d41	48 8B 1C 24
+; Watch point fires here.
+; 0x0000000041928d41	48 8B 1C 24
     mov rbx, qword ptr [rsp]
-0x0000000041928d45	48 8B 6C 24 08
+; 0x0000000041928d45	48 8B 6C 24 08
     mov rbp, qword ptr [rsp + 8]
-0x0000000041928d4a	4C 8B 64 24 10
+; 0x0000000041928d4a	4C 8B 64 24 10
     mov r12, qword ptr [rsp + 0x10]
-0x0000000041928d4f	4C 8B 6C 24 18
+; 0x0000000041928d4f	4C 8B 6C 24 18
     mov r13, qword ptr [rsp + 0x18]
-0x0000000041928d54	4C 8B 7C 24 20
+; 0x0000000041928d54	4C 8B 7C 24 20
     mov r15, qword ptr [rsp + 0x20]
-0x0000000041928d59	48 83 C4 58
+; 0x0000000041928d59	48 83 C4 58
     add rsp, 0x58
-0x0000000041928d5d	C3
-    ret
 ```
 
 Restoring health (on a bench)

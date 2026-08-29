@@ -10,6 +10,7 @@ memory and change their values as needed.
 
 - Works on Linux. May or may not work on macOS. Definitely not Windows.
 - GDB with python3.14+ support.
+- GCC / binutils objdump + objcopy.
 - Python package `tqdm` for drawing progress bars.
 
 To load the plugin, install the python package and run `cheats-gdb`. This is a gdb wrapper that loads the plugin.
