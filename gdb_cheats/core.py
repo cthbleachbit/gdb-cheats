@@ -87,7 +87,7 @@ class ValueType(str, Enum):
 
     def format_spec(self, address: Address) -> str:
         """ Format to gdb acceptable spec """
-        return f"*({self}*)0x{address:016x}"
+        return f"*({self.value}*)0x{address:016x}"
 
     @property
     def length_bytes(self) -> int:
