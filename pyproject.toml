@@ -1,7 +1,7 @@
 [project]
 name = "gdb_cheats"
 description = "Cheat engine GDB plugin"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
     { name = "Tianhao Chai", email = "cth451@gmail.com" }
 ]
@@ -10,7 +10,9 @@ keywords = []
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "Topic :: Software Development :: Build Tools",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Software Development :: Debuggers",
+    "Typing :: Typed",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
