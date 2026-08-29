@@ -391,6 +391,10 @@ class MemorySegment:
         return self.permissions.r
 
     @property
+    def executable(self) -> bool:
+        return self.permissions.x
+
+    @property
     def length(self) -> int:
         return self.end - self.start
 
@@ -458,7 +462,7 @@ class SearchSession:
             _logger.warning("Failed to resolve MADV_GUARD_REMOVE constant. This may cause memory search to fail.")
 
         for segment in segments:
-            _logger.info(f"Stripping guard pages for {str(segment)}")
+            _logger.debug(f"Stripping guard pages for {str(segment)}")
             try:
                 madvise_return = int(
                     gdb.parse_and_eval(f"(int) madvise({segment.start}, {segment.length}, {MADV_GUARD_REMOVE})"))
@@ -471,7 +475,8 @@ class SearchSession:
 
         return
 
-    def discover_segments(self) -> List[MemorySegment]:
+    @classmethod
+    def discover_segments(cls) -> List[MemorySegment]:
         target_pid = gdb.selected_inferior().pid
         if not target_pid:
             _logger.error("No target PID.")
@@ -484,11 +489,30 @@ class SearchSession:
                 _logger.debug(f"Discovered segment: {segment}")
                 process_segments.append(segment)
 
+        return process_segments
+
+    def discover_data_segments(self) -> List[MemorySegment]:
+        process_segments = self.discover_segments()
+
         eligible_segments = [segment for segment in process_segments if
                              not segment.file_backed and segment.writable and segment.readable and len(segment) > 0]
 
         _logger.info("Found {} segments.".format(len(process_segments)))
         _logger.info("Found {} segments containing runtime data.".format(
+            len(eligible_segments)))
+
+        self.madvise_undo_guard(eligible_segments)
+
+        return eligible_segments
+
+    def discover_code_segments(self) -> List[MemorySegment]:
+        process_segments = self.discover_segments()
+
+        eligible_segments = [segment for segment in process_segments if
+                             segment.executable and len(segment) > 0]
+
+        _logger.info("Found {} segments.".format(len(process_segments)))
+        _logger.info("Found {} segments containing executable code.".format(
             len(eligible_segments)))
 
         self.madvise_undo_guard(eligible_segments)
@@ -516,7 +540,7 @@ class SearchSession:
         else:
             raise ValueError(f"Unknown search implementation: {search_impl}")
 
-        search_segments = self.discover_segments()
+        search_segments = self.discover_data_segments()
 
         if not search_segments:
             _logger.error(f"No segments found!")
@@ -572,7 +596,7 @@ class SearchSession:
 
         _search_impl: MemorySearchImpl = self.get_search_impl(search_impl)
 
-        search_segments = self.discover_segments()
+        search_segments = self.discover_data_segments()
 
         if not search_segments:
             _logger.error(f"No segments found!")

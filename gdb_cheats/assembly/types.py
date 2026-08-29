@@ -4,7 +4,7 @@ import string
 from collections import defaultdict
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 from gdb_cheats.assembly.assembler import invoke_assembler, invoke_objdump_dump_symbol, invoke_objcopy_dump_section
 
@@ -56,6 +56,10 @@ class InstrumentAction(abc.ABC):
         """
         raise NotImplementedError()
 
+    def __call__(self, gdb, variables: Dict[str, str]) -> None:
+        """Perform the action."""
+        raise NotImplementedError()
+
     def __repr__(self) -> str:
         raise NotImplementedError()
 
@@ -66,13 +70,16 @@ class InstrumentAction(abc.ABC):
 @dataclass
 class InstrumentBindVariable(InstrumentAction):
     """
-    Indicate that the cheat engine should bind a variable to the value of a GDB expression.
+    Indicate that the cheat engine should bind a search context variable
+    to the value of a GDB expression.
+    How this variable is interpreted depends on the game-specific driver.
 
     The variable name must be a valid assembly label.
     The expression is evaluated BEFORE the instruction is executed.
     """
     expression: str
     variable_name: str
+    overwrite: bool = False
 
     def __post_init__(self):
         # require variable name to be a valid assembly label
@@ -81,6 +88,15 @@ class InstrumentBindVariable(InstrumentAction):
     @property
     def as_label(self) -> str:
         return f"bind_variable_{self.variable_name}"
+
+    def __call__(self, gdb, variables: Dict[str, Any]) -> None:
+        """
+        Perform the action.
+        """
+        value = gdb.parse_and_eval(self.expression)
+
+        if self.overwrite or self.variable_name not in variables.keys():
+            variables[self.variable_name] = value
 
     def __repr__(self) -> str:
         return f"InstrumentBindVariable(expression={repr(self.expression)}, variable_name={repr(self.variable_name)})"
@@ -202,6 +218,24 @@ class Snippet:
     @property
     def section_name(self) -> str:
         return f".{self.name}"
+
+    @property
+    def label_offsets(self) -> Dict[str, int]:
+        """
+        Returns a dictionary mapping label names to their offsets in the assembled binary blob.
+        """
+        return self._label_offsets
+
+    @property
+    def instrumented_instructions(self) -> Dict[int, InstrumentAction]:
+        """
+        Returns a dictionary mapping of byte offsets and corresponding instrumentation actions.
+        """
+
+        address_and_action: Dict[int, InstrumentAction] = {self._label_offsets[inst.action.as_label]: inst.action for
+                                                           inst in self._instructions if inst.action is not None}
+
+        return address_and_action
 
     @property
     def assembly_source(self) -> str:
