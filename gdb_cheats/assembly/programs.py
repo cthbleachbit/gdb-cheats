@@ -3,6 +3,7 @@ External programs used during assembly / disassembly.
 """
 import os
 import shutil
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict
@@ -67,8 +68,30 @@ def get_objcopy(required: bool = True) -> str:
     return _get_program("objcopy", "OBJCOPY", required)
 
 
+def get_tooling_environ() -> Dict[str, str]:
+    new_env = dict(os.environ)
+    new_env["LANG"] = "C.UTF-8"
+    return new_env
+
+
+def assembler_native_machine() -> str:
+    assembler = get_gnu_assembler(required=True)
+
+    as_dump_config = subprocess.run([assembler, "--dump-config"], encoding="utf-8", env=get_tooling_environ(),
+                                    stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+
+    cpu_type_line = [line for line in as_dump_config.stdout.splitlines(
+    ) if line.startswith("cpu-type")]
+    if not cpu_type_line:
+        raise EnvironmentError(f"Could not probe architecture supported by your assembler `{assembler}`")
+
+    return cpu_type_line[0].split("=")[1].strip()
+
+
 __all__ = [
     "get_gnu_assembler",
     "get_objdump",
     "get_objcopy",
+    "get_tooling_environ",
+    "assembler_native_machine"
 ]

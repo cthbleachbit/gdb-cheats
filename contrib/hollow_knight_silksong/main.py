@@ -9,15 +9,19 @@ Usage:
     - Load save file if not loaded, take some damage.
     - Should see logs about `bind_variable_player_base` firing.
 - Go back to gdb and press C-c.
-- Do `python silksong_begin_cheat()`.
+- Do `python silksong_rebuild_cheats()`.
 - Profit.
 """
+import logging
+
 from gdb_cheats.assembly.instrumentation import CodeSearch
 from gdb_cheats.assembly.types import *
-from gdb_cheats.command import get_session
 from gdb_cheats.core import VariableDefinition, ValueType
+from gdb_cheats.session_management import get_or_create_session, destroy_session
+import gdb
 
 _code_search = CodeSearch()
+_logger = logging.getLogger("silksong")
 
 SNIPPET_HP_TAKE_DAMAGE = Snippet(
     "hp_take_damage",
@@ -68,8 +72,12 @@ def silksong_search_vars():
         print(f"{key}: {value}")
 
 
-def silksong_begin_cheat():
+def silksong_rebuild_cheats():
     global _code_search
+
+    destroy_session("silksong")
+    session = get_or_create_session("silksong")
+
     if "player_base" not in _code_search.state().keys():
         print("Player base not found")
         return
@@ -80,13 +88,18 @@ def silksong_begin_cheat():
     hp_addr = player_base + 0x224
     silk_addr = player_base + 0x248
 
-    session = get_session()
     hp_var = VariableDefinition("hp", ValueType.U32, hp_addr)
     silk_var = VariableDefinition("silk", ValueType.U32, silk_addr)
     session.variables.append(hp_var)
     session.variables.append(silk_var)
-    session.variable_lock_create(hp_var, 9)
-    session.variable_lock_create(silk_var, 10)
+
+    _logger.info("Cheats rebuilt in session `silksong`")
+    session.summarize()
+
+    # switch session
+    gdb.execute("cheat session switch silksong")
+    _logger.info("Use `cheat lock create hp 10` to lock player HP at 10.")
+    _logger.info("Use `cheat session switch` to switch back to the default session.")
 
 
 if __name__ == "__main__":

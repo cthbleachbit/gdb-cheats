@@ -1,6 +1,5 @@
 """Routines to assemble instructions with GNU assembler"""
 import logging
-import os
 import subprocess
 from tempfile import NamedTemporaryFile
 from typing import Dict
@@ -8,12 +7,6 @@ from typing import Dict
 from gdb_cheats.assembly.programs import *
 
 _logger = logging.getLogger(__name__)
-
-
-def get_tooling_environ() -> Dict[str, str]:
-    new_env = dict(os.environ)
-    new_env["LANG"] = "C.UTF-8"
-    return new_env
 
 
 def invoke_assembler(source: str, output_file: str):

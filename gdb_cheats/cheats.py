@@ -35,7 +35,7 @@ def loader_entrypoint():
 
         # Register commands and initialize session
         register_gdb_commands()
-        gdb.execute("cheat session create")
+        gdb.execute("cheat session switch")
     except Exception as e:
         logging.error("Cheat engine failed to initialize.", exc_info=e)
 

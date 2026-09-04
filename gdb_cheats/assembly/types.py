@@ -1,12 +1,15 @@
 import abc
+import copy
 import enum
+import itertools
 import string
 from collections import defaultdict
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from gdb_cheats.assembly.assembler import invoke_assembler, invoke_objdump_dump_symbol, invoke_objcopy_dump_section
+from gdb_cheats.assembly.programs import assembler_native_machine, get_gnu_assembler
 
 
 def _enforce_label(label: str):
@@ -41,6 +44,21 @@ class EncodingOptions(str, enum.Enum):
 
     def __repr__(self) -> str:
         return f"EncodingOptions.{self.name}"
+
+
+class Machine(str, enum.Enum):
+    """
+    Supported machine architecture.
+    String values taken from GNU assembler `cpu-type`.
+    """
+    AMD64 = "x86_64"
+    AARCH64 = "aarch64"
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"Machine.{self.name}"
 
 
 class InstrumentAction(abc.ABC):
@@ -104,6 +122,13 @@ class InstrumentBindVariable(InstrumentAction):
     def __str__(self) -> str:
         return repr(self)
 
+    def __deepcopy__(self, memo):
+        return InstrumentBindVariable(
+            expression=copy.deepcopy(self.expression, memo),
+            variable_name=copy.deepcopy(self.variable_name, memo),
+            overwrite=self.overwrite
+        )
+
 
 @dataclass
 class Instruction:
@@ -128,15 +153,19 @@ class Instruction:
     action: Optional[InstrumentAction] = None
     glob: List[int] = field(default_factory=list)
 
-    def as_gnu_assembly(self) -> List[str]:
+    def as_gnu_assembly(self, line_number: Optional[int] = None) -> List[str]:
         """
         Return the instruction as lines that can be consumed by the GNU assembler.
+
+        :param line_number: If a number `x` is provided, add a label "line_x".
         """
         lines = []
         if self.comment:
             lines.extend(["/*", self.comment, "*/"])
         if self.label:
             lines.append(f".set {self.label}, .")
+        if line_number is not None:
+            lines.append(f".set line_{line_number}, .")
         if self.action:
             lines.append(f".set {self.action.as_label}, .")
 
@@ -148,20 +177,21 @@ class Instruction:
     def __repr__(self) -> str:
         return f"Instruction(assembly={repr(self.assembly)}, encoding={repr(self.encoding)}, comment={repr(self.comment)}, label={repr(self.label)}, action={repr(self.action)}, glob={repr(self.glob)})"
 
+    def __deepcopy__(self, memo):
+        return Instruction(
+            assembly=copy.deepcopy(self.assembly, memo),
+            encoding=copy.deepcopy(self.encoding, memo),
+            comment=copy.deepcopy(self.comment, memo),
+            label=copy.deepcopy(self.label, memo),
+            action=copy.deepcopy(self.action, memo),
+            glob=copy.deepcopy(self.glob, memo),
+        )
 
-@dataclass
+
 class Snippet:
     """
     A snippet of assembly code.
     """
-    # Name of the snippet - used as elf section name.
-    _name: str
-    # List of instructions in the snippet.
-    _instructions: List[Instruction]
-    # Offsets of user-defined and instrumentation labels in the snippet.
-    _label_offsets: Dict[str, int] = field(default_factory=dict)
-    # Assembled blob
-    _assembled_binary: Optional[bytes] = None
 
     def _check_instructions(self):
         """
@@ -179,13 +209,27 @@ class Snippet:
         if duplicates:
             raise ValueError(f"Snippet '{self._name}' contains duplicate labels: {duplicates}")
 
-    def __init__(self, name: str, instructions: List[Instruction]):
+        reserved_line_labels = [instruction.label for instruction in self._instructions if
+                                instruction.label and instruction.label.startswith("line_")]
+        if reserved_line_labels:
+            raise ValueError(f"Snippet '{self._name}' contains reserved `line_` labels: {reserved_line_labels}")
+
+    def __init__(self, name: str, machine: Machine, instructions: List[Instruction]):
         self._name = name
+        self._machine = machine
         self._instructions = instructions
-        self._offsets = []
+        self._label_offsets: Dict[str, int] = {}
+        self._assembled_binary: List[bytes] = []
 
         _enforce_label(self._name)
         self._check_instructions()
+
+    def __deepcopy__(self, memo):
+        return Snippet(
+            name=copy.deepcopy(self._name, memo),
+            machine=copy.deepcopy(self._machine, memo),
+            instructions=copy.deepcopy(self._instructions, memo),
+        )
 
     @property
     def instructions(self) -> List[Instruction]:
@@ -202,18 +246,25 @@ class Snippet:
         return self._name
 
     @property
+    def machine(self) -> Machine:
+        """
+        Machine architecture for which the snippet is intended.
+        """
+        return self._machine
+
+    @property
     def is_assembled(self) -> bool:
         """
         Returns True if the snippet has been assembled into a binary blob and all of its offsets generated.
         """
-        return self._assembled_binary is not None
+        return len(self._assembled_binary) > 0
 
     @property
     def assembled_size(self) -> int:
         """
         Returns the size of the assembled binary blob, or 0 if it has not been assembled.
         """
-        return len(self._assembled_binary) if self._assembled_binary is not None else 0
+        return len(self._assembled_binary)
 
     @property
     def section_name(self) -> str:
@@ -237,6 +288,28 @@ class Snippet:
 
         return address_and_action
 
+    def source_and_binary(self) -> List[Tuple[Instruction, bytes]]:
+        """
+        Returns a tuple of assembly source corresponding assembled binary.
+        """
+        return list(zip(self._instructions, self.assembled_line_by_line))
+
+    def format_side_by_side(self) -> str:
+        """
+        Returns a formatted string representation of the assembly.
+        """
+
+        max_instruction_bytes = max(len(bin_instr) for bin_instr in self.assembled_line_by_line)
+
+        def _format_hex(binary: bytes) -> str:
+            return " ".join([f"{byte:02x}" for byte in binary]).ljust(max_instruction_bytes * 3 + 2)
+
+        output = ""
+        for source, binary in self.source_and_binary():
+            output += f"  {_format_hex(binary)} {source.assembly}\n"
+
+        return output
+
     @property
     def assembly_source(self) -> str:
         """Assembly source as human-readable text"""
@@ -244,10 +317,18 @@ class Snippet:
         # Generate content for asm source.
         lines = [f".section {self.section_name}, \"x\""]
 
-        for instruction in self._instructions:
-            lines.extend(instruction.as_gnu_assembly())
+        for idx, instruction in enumerate(self._instructions):
+            lines.extend(instruction.as_gnu_assembly(idx))
 
         return "".join([line + "\n" for line in lines])
+
+    @property
+    def assembled_binary(self) -> bytes:
+        return bytes(itertools.chain(self._assembled_binary))
+
+    @property
+    def assembled_line_by_line(self) -> List[bytes]:
+        return self._assembled_binary or ([b""] * len(self._instructions))
 
     def assemble(self) -> bytes:
         """
@@ -255,24 +336,48 @@ class Snippet:
 
         Invokes `objdump` on the generated binary blob to list offsets for each label.
         """
-        if self._assembled_binary is not None:
-            return self._assembled_binary
+        if self.is_assembled:
+            return bytes(itertools.chain(self._assembled_binary))
+
+        system_arch = assembler_native_machine()
+        if self._machine != system_arch:
+            raise EnvironmentError(
+                f"Snippet '{self._name}' for {self._machine} is not supported by {system_arch} `{get_gnu_assembler()}`.")
 
         with (NamedTemporaryFile("w+", suffix=".o", delete_on_close=False) as elf):
             elf.close()
             invoke_assembler(self.assembly_source, elf.name)
 
-            label_offsets = invoke_objdump_dump_symbol(elf.name, self.section_name)
-            raw_binary = invoke_objcopy_dump_section(elf.name, self.section_name)
+            label_offsets = invoke_objdump_dump_symbol(
+                elf.name, self.section_name)
+            raw_binary = invoke_objcopy_dump_section(
+                elf.name, self.section_name)
+
+            line_offsets = list()
+            for idx in range(len(self._instructions)):
+                offset = label_offsets.pop(f"line_{idx}")
+                line_offsets.append(offset)
+            line_offsets.append(len(raw_binary))
+
+            # Cut raw binary into line-by-line
+            line_by_line_binary = list()
+            for idx in range(len(self._instructions)):
+                bin_start = line_offsets[idx]
+                bin_end = line_offsets[idx + 1]
+                bin_assembly = raw_binary[bin_start:bin_end]
+                line_by_line_binary.append(bin_assembly)
+
+            assert len(line_by_line_binary) == len(self._instructions)
 
             self._label_offsets = label_offsets
-            self._assembled_binary = raw_binary
+            self._assembled_binary = line_by_line_binary
 
             return raw_binary
 
 
 __all__ = [
     "EncodingOptions",
+    "Machine",
     "InstrumentAction",
     "InstrumentBindVariable",
     "Instruction",

@@ -1,0 +1,45 @@
+"""
+Manages session separation.
+
+The command line user has the default session, but can switch to a different session.
+
+"""
+import logging
+from collections import defaultdict
+from typing import Optional, Dict
+
+from gdb_cheats.core import CheatSession
+
+# Stores active sessions.
+# A `None` key is reserved for the command line session.
+# Contrib scripts should create their own sessions.
+_sessions: Dict[Optional[str], CheatSession] = defaultdict(CheatSession)
+
+_logger = logging.getLogger(__name__)
+
+
+def get_or_create_session(session_key: Optional[str] = None) -> CheatSession:
+    """
+    Returns the selected session.
+    """
+    return _sessions[session_key]
+
+
+def destroy_session(session_key: Optional[str]):
+    """
+    Destroys the selected session.
+    """
+    session = _sessions.pop(session_key)
+    if session is not None:
+        _logger.info("Destroying session %s", session_key)
+        session.cleanup()
+
+
+def summarize_all_session():
+    global _sessions
+
+    for name, session in _sessions.items():
+        print("##### Session: ", name or "(gdb command line)")
+        session.summarize()
+        if session.current_search is not None:
+            session.current_search.summarize(True)

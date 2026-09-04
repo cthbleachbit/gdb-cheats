@@ -38,8 +38,7 @@ All commands live under `cheat` prefix and support in-debugger `help <command>`.
 
 ### `cheat session` - Manage global information
 
-* `create` - Create a new session. If there's already an active session, it will be `delete`d before a new session is
-  created.
+* `switch <name>` - Switch to the given session. When `name` is omitted, switch to the default session.
 * `summarize` - Print a summary of all currently tracked information.
 * `delete` - Delete the current session. All variables, watchpoints and in-progress search will be deleted.
 

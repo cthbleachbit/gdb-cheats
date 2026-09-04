@@ -818,6 +818,10 @@ class CheatSession:
             watchpoint.delete()
         self.watchpoints = {}
 
+    def summarize(self):
+        self.summarize_variables()
+        self.summarize_watchpoints()
+
     def summarize_variables(self) -> None:
         print("=== Variables ===")
         for index, v in enumerate(self.variables):
