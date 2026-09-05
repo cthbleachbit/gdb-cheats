@@ -66,6 +66,11 @@ def silksong_start_instrumentation():
     _code_search.search_code(SNIPPET_HP_TAKE_DAMAGE)
     _code_search.enable_instrumentation(SNIPPET_HP_TAKE_DAMAGE)
 
+    print("=============================")
+    print("1. Go take some damage.")
+    print("2. Run `python silksong_rebuild_cheats()`")
+    print("=============================")
+
 
 def silksong_stop_instrumentation():
     global _code_search
@@ -104,8 +109,10 @@ def silksong_rebuild_cheats():
 
     # switch session
     gdb.execute("cheat session switch silksong")
+    print("=============================")
     _logger.info("Use `cheat lock create hp 10` to lock player HP at 10.")
     _logger.info("Use `cheat session switch` to switch back to the default session.")
+    print("=============================")
 
 
 if __name__ == "__main__":
