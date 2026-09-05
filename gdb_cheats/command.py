@@ -561,7 +561,12 @@ class CommandCheatSearchReset(gdb.Command):
 class CommandCheatLockCreate(gdb.Command):
     """
     Create a new lock that locks a defined variable to a defined value.
+
     Usage: cheat lock create <variable index> <locked value>
+
+    Under the hood this creates a gdb memory address watchpoint.
+    This watchpoint is marked internal and will not appear under `info watchpoints`.
+    To temporarily disable this watchpoint, use `cheat lock disable <variable index>`.
     """
 
     def __init__(self):
@@ -609,6 +614,7 @@ class CommandCheatLockCreate(gdb.Command):
 class CommandCheatLockEnable(gdb.Command):
     """
     Enable a created lock on a defined variable.
+
     Usage: cheat lock enable <variable index>
     """
 
