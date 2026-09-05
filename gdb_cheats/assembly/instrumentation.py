@@ -60,9 +60,12 @@ class CodeSearch:
         search_areas = [(segment.start, segment.end) for segment in segments]
 
         matches = search_engine.exact(search_areas, raw_binary)
-        self._snippet_addresses[snippet.name].update(matches)
+        if not matches:
+            _logger.warning(f"Snippet {snippet.name} not found in memory.")
+        else:
+            _logger.info(f"Snippet {snippet.name} found at addresses: {matches}")
 
-        _logger.info(f"Snippet {snippet.name} found at addresses: {self._snippet_addresses[snippet.name]}")
+        self._snippet_addresses[snippet.name].update(matches)
 
         return self._snippet_addresses[snippet.name]
 

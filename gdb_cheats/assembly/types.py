@@ -1,7 +1,6 @@
 import abc
 import copy
 import enum
-import itertools
 import string
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -343,7 +342,7 @@ class Snippet:
 
     @property
     def assembled_binary(self) -> bytes:
-        return bytes(itertools.chain(self._assembled_binary))
+        return b"".join(self._assembled_binary)
 
     @property
     def assembled_line_by_line(self) -> List[bytes]:
@@ -356,7 +355,7 @@ class Snippet:
         Invokes `objdump` on the generated binary blob to list offsets for each label.
         """
         if self.is_assembled:
-            return bytes(itertools.chain(self._assembled_binary))
+            return self.assembled_binary
 
         system_arch = assembler_native_machine()
         if self._machine != system_arch:

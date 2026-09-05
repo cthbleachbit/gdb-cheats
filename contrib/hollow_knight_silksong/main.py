@@ -58,6 +58,11 @@ SNIPPET_HP_TAKE_DAMAGE = Snippet(
 
 def silksong_start_instrumentation():
     global _code_search
+    SNIPPET_HP_TAKE_DAMAGE.assemble()
+
+    print("Assmebled HP damage snippet")
+    print(SNIPPET_HP_TAKE_DAMAGE.format_side_by_side())
+
     _code_search.search_code(SNIPPET_HP_TAKE_DAMAGE)
     _code_search.enable_instrumentation(SNIPPET_HP_TAKE_DAMAGE)
 
