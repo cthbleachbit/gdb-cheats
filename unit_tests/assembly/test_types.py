@@ -28,4 +28,4 @@ from gdb_cheats.assembly.types import Instruction, EncodingOptions, InstrumentBi
     ],
 )
 def test_instruction_serialize(instruction, expect: List[str]):
-    assert instruction.as_gnu_assembly() == expect
+    assert instruction.as_labeled_assembly() == expect

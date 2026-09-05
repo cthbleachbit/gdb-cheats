@@ -153,13 +153,22 @@ class Instruction:
     action: Optional[InstrumentAction] = None
     glob: List[int] = field(default_factory=list)
 
-    def as_gnu_assembly(self, line_number: Optional[int] = None) -> List[str]:
+    def as_assembly(self) -> str:
         """
-        Return the instruction as lines that can be consumed by the GNU assembler.
+        Return the instruction in text form that can be consumed by the GNU assembler.
+        """
+
+        encoding_string = "" if self.encoding is None else f"{{{self.encoding}}} "
+        return f"    {encoding_string}{self.assembly}"
+
+    def as_labels(self, line_number: Optional[int] = None) -> List[str]:
+        """
+        Return the labels that can be consumed by the GNU assembler.
 
         :param line_number: If a number `x` is provided, add a label "line_x".
         """
         lines = []
+
         if self.comment:
             lines.extend(["/*", self.comment, "*/"])
         if self.label:
@@ -169,8 +178,16 @@ class Instruction:
         if self.action:
             lines.append(f".set {self.action.as_label}, .")
 
-        encoding_string = "" if self.encoding is None else f"{{{self.encoding}}} "
-        lines.append(f"    {encoding_string}{self.assembly}")
+        return lines
+
+    def as_labeled_assembly(self, line_number: Optional[int] = None) -> List[str]:
+        """
+        Return the instruction in text form with labels that can be consumed by the GNU assembler.
+
+        :param line_number: If a number `x` is provided, add a label "line_x".
+        """
+        lines = self.as_labels(line_number)
+        lines.append(self.as_assembly())
 
         return lines
 
@@ -302,11 +319,13 @@ class Snippet:
         max_instruction_bytes = max(len(bin_instr) for bin_instr in self.assembled_line_by_line)
 
         def _format_hex(binary: bytes) -> str:
-            return " ".join([f"{byte:02x}" for byte in binary]).ljust(max_instruction_bytes * 3 + 2)
+            return " ".join([f"{byte:02x}" for byte in binary]).ljust(max_instruction_bytes * 3)
 
         output = ""
         for source, binary in self.source_and_binary():
-            output += f"  {_format_hex(binary)} {source.assembly}\n"
+            for line in source.as_labels():
+                output += "".ljust(max_instruction_bytes * 3 + 4) + f"{line}\n"
+            output += f"  {_format_hex(binary)} {source.as_assembly()}\n"
 
         return output
 
@@ -318,7 +337,7 @@ class Snippet:
         lines = [f".section {self.section_name}, \"x\""]
 
         for idx, instruction in enumerate(self._instructions):
-            lines.extend(instruction.as_gnu_assembly(idx))
+            lines.extend(instruction.as_labeled_assembly(idx))
 
         return "".join([line + "\n" for line in lines])
 

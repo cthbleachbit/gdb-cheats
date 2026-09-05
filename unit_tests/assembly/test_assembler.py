@@ -1,6 +1,5 @@
 import copy
 import sys
-from statistics import stdev
 
 from gdb_cheats.assembly.assembler import *
 from gdb_cheats.assembly.types import *
