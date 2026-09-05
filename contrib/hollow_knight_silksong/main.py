@@ -99,8 +99,10 @@ def silksong_rebuild_cheats():
     hp_addr = player_base + 0x224
     silk_addr = player_base + 0x248
 
+    player_base = VariableDefinition("player_base", ValueType.U64, player_base)
     hp_var = VariableDefinition("hp", ValueType.U32, hp_addr)
     silk_var = VariableDefinition("silk", ValueType.U32, silk_addr)
+    session.variables.append(player_base)
     session.variables.append(hp_var)
     session.variables.append(silk_var)
 
