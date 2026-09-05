@@ -159,7 +159,7 @@ class CommandCheatSessionSwitch(gdb.Command):
         if len(arguments) == 0:
             session_name = None
         else:
-            session_name = arguments[1]
+            session_name = arguments[0]
 
         set_active_session_name(session_name)
         session = get_active_session()

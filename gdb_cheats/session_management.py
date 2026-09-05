@@ -22,17 +22,25 @@ def get_or_create_session(session_key: Optional[str] = None) -> CheatSession:
     """
     Returns the selected session.
     """
-    return _sessions[session_key]
+    try:
+        return _sessions[session_key]
+    except KeyError:
+        _logger.info("Creating new session `%s`.", session_key)
+        _sessions[session_key] = CheatSession()
+        return _sessions[session_key]
 
 
 def destroy_session(session_key: Optional[str]):
     """
     Destroys the selected session.
     """
-    session = _sessions.pop(session_key)
-    if session is not None:
-        _logger.info("Destroying session %s", session_key)
-        session.cleanup()
+    try:
+        session = _sessions.pop(session_key)
+        if session is not None:
+            _logger.info("Destroying session `%s`", session_key)
+            session.cleanup()
+    except KeyError:
+        _logger.warning("Session to destroy `%s` does not exist.", session_key)
 
 
 def summarize_all_session():
