@@ -564,7 +564,7 @@ class CommandCheatLockCreate(gdb.Command):
 
     Usage: cheat lock create <variable index> <locked value>
 
-    Under the hood this creates a gdb memory address watchpoint.
+    The lock memory watchpoint will deny memory writes to the address.
     This watchpoint is marked internal and will not appear under `info watchpoints`.
     To temporarily disable this watchpoint, use `cheat lock disable <variable index>`.
     """
@@ -785,7 +785,7 @@ class CommandCheatVariableCreate(gdb.Command):
 
 class CommandCheatVariableSet(gdb.Command):
     """
-    Set value for variable.
+    Set the in-memory value for a variable.
     Usage: cheat variable set <index> <value>
     """
 
@@ -835,6 +835,108 @@ class CommandCheatVariableSet(gdb.Command):
         except Exception as e:
             _logger.error(f"Error occurred during operation", exc_info=e)
             return
+
+
+class CommandCheatVariableTrace(gdb.Command):
+    """
+    Sets a standard watchpoint on a defined variable. Pauses execution when the variable is accessed.
+
+    Usage: cheat variable trace <variable index> [read] [write]
+
+    Helps you narrow down code segments that uses this variable.
+    The cheat session does not manage the created watchpoint. Control it from the gdb watchpoint list.
+    """
+
+    def __init__(self):
+        super().__init__("cheat variable trace",
+                         gdb.COMMAND_DATA, gdb.COMPLETE_NONE)
+
+    def invoke(self, argument: str, from_tty: bool) -> None:
+        self.dont_repeat()
+        session = get_active_session()
+
+        argv = gdb.string_to_argv(argument)
+        if len(argv) < 1:
+            _logger.error("Requires at least one argument")
+            _logger.info("Usage: cheat variable trace <variable index> [read] [write]")
+            return
+
+        index = int(argv[0])
+        rw_flags = argv[1:]
+        stop_on_read = "read" in rw_flags
+        stop_on_write = "write" in rw_flags
+
+        if index > len(session.variables):
+            _logger.error("Invalid variable index.")
+            return
+
+        variable = session.variables[index]
+
+        if not variable.valid:
+            _logger.error("Invalid variable.")
+            session.summarize_variables()
+            return
+
+        if stop_on_read and stop_on_write:
+            gdb_cmd = "awatch"
+        elif stop_on_read and not stop_on_write:
+            gdb_cmd = "rwatch"
+        elif not stop_on_read and stop_on_write:
+            gdb_cmd = "watch"
+        else:
+            _logger.error("Requires at least one of read or write")
+            _logger.info("Usage: cheat variable trace <variable index> [read] [write]")
+            return
+
+        gdb.execute(f"{gdb_cmd} {variable.format_spec()}", from_tty)
+
+
+class CommandCheatVariableIndirectSearch(gdb.Command):
+    """
+    Starts a new search for other memory locations that points to this variable.
+
+    Usage: cheat variable indirect-search <variable index>
+
+    If a search is in progress, this command will be canceled. Reset the search with `cheat search reset` first.
+    Manage this search with `cheat search` commands.
+    """
+
+    def __init__(self):
+        super(CommandCheatVariableIndirectSearch, self).__init__(
+            "cheat variable indirect-search",
+            gdb.COMMAND_DATA,
+            gdb.COMPLETE_NONE,
+        )
+
+    def invoke(self, argument: str, from_tty: bool) -> None:
+        self.dont_repeat()
+        session = get_active_session()
+
+        argv = gdb.string_to_argv(argument)
+        if len(argv) != 1:
+            _logger.error("Requires exactly one argument for variable index")
+            return
+        index = int(argv[0])
+
+        if index > len(session.variables):
+            _logger.error("Invalid variable index.")
+            return
+
+        variable = session.variables[index]
+
+        if not variable.valid:
+            _logger.error("Invalid variable.")
+            session.summarize_variables()
+            return
+
+        if session.current_search is not None and session.current_search.is_populated():
+            _logger.error("Cannot create reverse pointer search while an existing search is active.")
+            _logger.info("Discard existing search first with `cheat search reset`.")
+            return
+
+        session.current_search = SearchSession(ValueType.U64, session.libc_constants)
+        session.current_search.populate(variable.address)
+        session.current_search.summarize(from_tty)
 
 
 class CommandCheatVariableDelete(gdb.Command):
@@ -934,6 +1036,8 @@ def register_gdb_commands():
     CommandCheatLockDelete()
     CommandCheatVariableCreate()
     CommandCheatVariableSet()
+    CommandCheatVariableTrace()
+    CommandCheatVariableIndirectSearch()
     CommandCheatVariableDelete()
     CommandCheatVariableSummary()
 
