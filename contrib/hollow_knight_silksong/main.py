@@ -25,6 +25,7 @@ _logger = logging.getLogger("silksong")
 
 SNIPPET_HP_TAKE_DAMAGE = Snippet(
     "hp_take_damage",
+    Machine.AMD64,
     [
         Instruction("mov %eax,0x224(%r12)"),
         Instruction("jmp skip_hp"),
