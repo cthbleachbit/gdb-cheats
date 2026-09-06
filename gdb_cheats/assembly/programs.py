@@ -12,7 +12,7 @@ _programs_searched: Dict[str, bool] = defaultdict(bool)
 _programs_path: Dict[str, str] = defaultdict(str)
 
 
-def _get_program(name: str, override_env_var: str, required: bool) -> str:
+def get_program(name: str, override_env_var: str, required: bool) -> str:
     """
     Look for the given program in the system path and cache the result.
     """
@@ -49,7 +49,7 @@ def get_gnu_assembler(required: bool = True) -> str:
     Determine whether the gnu assembler is available on this system.
     """
 
-    return _get_program("as", "AS", required)
+    return get_program("as", "AS", required)
 
 
 def get_objdump(required: bool = True) -> str:
@@ -57,7 +57,7 @@ def get_objdump(required: bool = True) -> str:
     Determine whether binutils objdump is available on this system.
     """
 
-    return _get_program("objdump", "OBJDUMP", required)
+    return get_program("objdump", "OBJDUMP", required)
 
 
 def get_objcopy(required: bool = True) -> str:
@@ -65,7 +65,7 @@ def get_objcopy(required: bool = True) -> str:
     Determine whether binutils objcopy is available on this system.
     """
 
-    return _get_program("objcopy", "OBJCOPY", required)
+    return get_program("objcopy", "OBJCOPY", required)
 
 
 def get_tooling_environ() -> Dict[str, str]:
@@ -89,6 +89,7 @@ def assembler_native_machine() -> str:
 
 
 __all__ = [
+    "get_program",
     "get_gnu_assembler",
     "get_objdump",
     "get_objcopy",
