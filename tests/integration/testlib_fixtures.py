@@ -125,7 +125,7 @@ def execute_in_gdb(inferior: str,
                     # Sets breakpoint
                     "-ex", f"python agent_init()",
                     "-ex", f"python agent_setup()",
-                    "-ex", f"run",
+                    "-ex", f"python agent_run()",
                     # Catch all exit - should not be here.
                     "-ex", "python raise SystemExit(1)",
                     "--args", str(inferior), *real_inferior_args

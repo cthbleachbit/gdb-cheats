@@ -29,7 +29,6 @@ cheats-gdb = "gdb_cheats.gdb_launcher:launch_gdb"
 [project.optional-dependencies]
 test = [
     "pytest",
-    "coveragepy",
 ]
 dev = [
     "types-gdb",
@@ -41,5 +40,5 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 testpaths = [
-    "unit_tests",
+    "tests",
 ]

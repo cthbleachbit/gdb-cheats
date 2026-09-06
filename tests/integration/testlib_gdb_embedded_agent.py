@@ -72,6 +72,13 @@ def agent_pass() -> NoReturn:
     raise SystemExit(0)
 
 
+def agent_run():
+    gdb = get_gdb_module()
+    assert gdb
+
+    gdb.execute("run")
+
+
 def exit_on_exception(func):
     def _wrapped(*args, **kwargs):
         try:
