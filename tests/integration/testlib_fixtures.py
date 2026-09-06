@@ -1,6 +1,8 @@
-import base64
+"""
+Integration test fixture supporting evaluating test functions on a live inferior.
+"""
+
 import inspect
-import json
 import os
 import pprint
 import subprocess
@@ -12,8 +14,8 @@ from typing import Optional, List, Dict, Union
 import pytest
 
 from gdb_cheats.assembly.programs import *
-from tests.integration import testlibexec_load_and_run_test as embedded_driver
-from tests.integration.testlib_types import AgentMessage
+from tests.integration import testlib_gdb_embedded_agent as embedded_driver
+from tests.integration.testlib_types import AgentMessage, base64_enc, base64_dec, EnvConstants
 
 
 def get_gdb():
@@ -28,25 +30,30 @@ def require_programs():
 
         get_gdb()
     except EnvironmentError as e:
-        pytest.xfail(f"Missing programs {str(e)}")
+        pytest.skip(f"Missing required programs {str(e)}")
 
 
 def execute_in_gdb(inferior: str,
-                   breakpoint_spec: str,
+                   breakpoint_spec: Union[str, List[str]],
                    timeout_sec=10,
                    inferior_path: Union[str, Path] = "",
                    inferior_args: Optional[List[str]] = None,
                    inferior_env: Optional[Dict[str, str]] = None):
     """
-    Run the given function in the cheat engine with GDB attached to the given program stopped at the given breakpoint.
+    Decorator driving the decorated function in GDB attached to the given program stopped at given breakpoints.
 
-    The wrapped test function will be reimported and executed inside GDB with a test agent.
-    The test agent accessing the test payload will have to skip this decorator and run the naked function instead,
-    so this decorator becomes no-op when the `gdb` module is available (in other words inside GDB).
+    The provided function will be invoked inside GDB every time the inferior program stops at each of the given
+    breakpoints.
+    The wrapped test function should have the following signature:
+    - Positional argument `gdb_cheats`: cheat engine module exposed by the test agent.
+    - Positional argument `gdb`: GDB module exposed by the test agent.
+    - Positional argument `context`: Provided dictionary for test function to track states.
+    - Optional keyword argument `bp`: tuple of spec and gdb breakpoint object.
+    The wrapped test function should return...
+    - `False` or `None` upon successful completion of the test to quit the debugger.
+    - `True` to continue debugging.
 
-    The wrapped test function should accept two arguments: `gdb_cheats` and `gdb`. The test agent exposes the
-    `gdb_cheats` and `gdb` modules as arguments to the test function. Test scripts thus should not import `gdb_cheats`
-    nor `gdb` modules at the top.
+    Test scripts thus should not import `gdb_cheats` nor `gdb` modules at the top.
 
     :param inferior: The inferior program to run.
     :param breakpoint_spec: When to stop the inferior program.
@@ -55,6 +62,9 @@ def execute_in_gdb(inferior: str,
     :param inferior_args: Arguments to pass to the inferior program.
     :param inferior_env: Environment variables to pass to the debugger.
     """
+
+    # The test agent accessing the test payload will have to skip this decorator and run the naked function instead.
+    # This decorator must skip modifying the function when inside GDB.
     if "gdb" in sys.modules.keys():
         # We are being loaded from inside GDB. Make this decorator a no-op.
         def _no_op_decorator(func):
@@ -73,13 +83,21 @@ def execute_in_gdb(inferior: str,
     real_inferior_args: List[str] = [] if inferior_args is None else inferior_args
     inferior = Path(inferior_path) / inferior
 
+    if isinstance(breakpoint_spec, str):
+        encoded_breakpoint_spec = base64_enc([breakpoint_spec])
+    elif isinstance(breakpoint_spec, list):
+        encoded_breakpoint_spec = base64_enc(breakpoint_spec)
+    else:
+        raise TypeError(f"Invalid breakpoint_spec type: {type(breakpoint_spec)}")
+    real_inferior_env[EnvConstants.BREAKPOINTS] = encoded_breakpoint_spec
+
     # check if inferior is a file
     if not inferior.is_file(follow_symlinks=True):
         pytest.xfail(f"Missing inferior program {inferior}")
 
     # Resolve the in-debugger driver
     if embedded_driver.__file__ is None:
-        pytest.xfail(f"Could not inspect debugger driver `textlibexec_load_and_run_test`")
+        pytest.xfail(f"Could not inspect debugger driver `testlib_gdb_embedded_agent`")
 
     debugger_driver_path = Path(embedded_driver.__file__).resolve()
 
@@ -93,9 +111,9 @@ def execute_in_gdb(inferior: str,
                 # Expect the python inside will send us updates to the fifo
                 # One line per message. Each message should be one serialized JSON dictionary encoded with base64.
 
-                real_inferior_env["TEST_IPC_FIFO"] = str(tmp_out.name)
-                real_inferior_env["TEST_SCRIPT"] = str(test_file)
-                real_inferior_env["TEST_FUNCTION"] = symbol_name
+                real_inferior_env[EnvConstants.IPC_FILE_PATH] = str(tmp_out.name)
+                real_inferior_env[EnvConstants.PAYLOAD_SCRIPT_PATH] = str(test_file)
+                real_inferior_env[EnvConstants.PAYLOAD_FUNCTION_NAME] = symbol_name
 
                 gdb_command_line = [
                     "cheats-gdb",
@@ -105,10 +123,11 @@ def execute_in_gdb(inferior: str,
                     # Load agent
                     "-iex", f"source {str(debugger_driver_path)}",
                     # Sets breakpoint
-                    "-ex", f"break {breakpoint_spec}",
+                    "-ex", f"python agent_init()",
+                    "-ex", f"python agent_setup()",
                     "-ex", f"run",
-                    # Run payload
-                    "-ex", "python run_payload()",
+                    # Catch all exit - should not be here.
+                    "-ex", "python raise SystemExit(1)",
                     "--args", str(inferior), *real_inferior_args
                 ]
 
@@ -116,6 +135,7 @@ def execute_in_gdb(inferior: str,
                                             stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
                                             text=True)
 
+                # Cumulative list of errors.
                 test_errors: List[str] = []
 
                 try:
@@ -125,6 +145,7 @@ def execute_in_gdb(inferior: str,
                     test_errors.append(str(e))
 
                 # At this point gdb should have exited.
+                gdb_proc.wait()
                 assert gdb_proc.returncode is not None
 
                 # Grab output
@@ -133,12 +154,13 @@ def execute_in_gdb(inferior: str,
                     test_errors.append(
                         f"GDB exited with non-zero {gdb_proc.returncode}.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}")
 
-                serialized_messages: List[AgentMessage] = [AgentMessage.from_dict(json.loads(base64.b64decode(line)))
-                                                           for line in tmp_out.readlines()]
+                serialized_messages = [AgentMessage.from_dict(base64_dec(line)) for line in tmp_out.readlines()]
 
                 # Expect to see "initialized" and "payload_loaded" messages.
                 if not any(message.type_ == "initialized" for message in serialized_messages):
                     test_errors.append("Missing `initialized` message - this run is probably invalid.")
+                if not any(message.type_ == "setup_complete" for message in serialized_messages):
+                    test_errors.append("Missing `setup_complete` message - this run is probably invalid.")
                 if not any(message.type_ == "payload_run_complete" for message in serialized_messages):
                     test_errors.append("Missing `payload payload_run_complete` message. Run failed.")
 
@@ -146,14 +168,14 @@ def execute_in_gdb(inferior: str,
                 failure_messages = [failure for failure in serialized_messages if failure.is_error()]
                 if failure_messages:
                     for message in serialized_messages:
-                        test_errors.append(f"Test agent report:\n{pprint.pformat(message.as_dict())}")
-
-                if test_errors:
-                    pytest.fail(f"Test failed. Errors: \n{'\n\n'.join(test_errors)}")
+                        test_errors.append(f"Test agent reported errors")
 
                 # Print the messages to stderr for reference
                 for message in serialized_messages:
-                    print(f"Test agent report:\n{pprint.pformat(message.as_dict())}", file=sys.stderr)
+                    print(f"{pprint.pformat(message.as_dict())}\n", file=sys.stderr)
+
+                if test_errors:
+                    pytest.fail(f"Test failed. Errors: \n{'\n\n'.join(test_errors)}")
 
         return _run_in_gdb
 

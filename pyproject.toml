@@ -29,6 +29,7 @@ cheats-gdb = "gdb_cheats.gdb_launcher:launch_gdb"
 [project.optional-dependencies]
 test = [
     "pytest",
+    "coveragepy",
 ]
 dev = [
     "types-gdb",

@@ -1,3 +1,5 @@
+import base64
+import json
 import traceback
 from dataclasses import dataclass
 from enum import Enum
@@ -91,3 +93,22 @@ class AgentMessage:
     def harness_exception(cls, exception: Exception, type_: Optional[str] = None) -> Self:
         return cls(class_=MessageClass.HARNESS_ERROR, type_=type_ or "exception_in_agent",
                    details=traceback.format_exception(exception))
+
+
+def base64_enc(obj: Any) -> str:
+    return base64.b64encode(json.dumps(obj).encode("utf-8")).decode("utf-8")
+
+
+def base64_dec(encoded: str) -> Any:
+    return json.loads(base64.b64decode(encoded).decode("utf-8"))
+
+
+class EnvConstants:
+    # Writable path for agent to output status
+    IPC_FILE_PATH = "TEST_IPC_FIFO"
+    # Actual test script
+    PAYLOAD_SCRIPT_PATH = "TEST_SCRIPT"
+    # The function to run upon breakpoint
+    PAYLOAD_FUNCTION_NAME = "TEST_FUNCTION"
+    # Breakpoints to set (base64 encoded list of strings)
+    BREAKPOINTS = "TEST_BREAKPOINTS"
