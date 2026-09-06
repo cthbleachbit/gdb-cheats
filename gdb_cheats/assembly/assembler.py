@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0
+
 """Routines to assemble instructions with GNU assembler"""
 import logging
 import subprocess

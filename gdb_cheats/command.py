@@ -15,8 +15,8 @@ import gdb
 import tqdm
 
 from gdb_cheats.session_management import get_or_create_session, destroy_session, summarize_all_session
-from .core import ValueType, CheatSession, SearchSession, InferiorState, VariableDefinition
-from .search import MemorySearchImpl
+from gdb_cheats.core import ValueType, CheatSession, SearchSession, InferiorState, VariableDefinition
+from gdb_cheats.search import MemorySearchImpl
 
 _logger = logging.getLogger("command")
 

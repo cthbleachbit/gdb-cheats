@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0
 
 """
@@ -19,7 +18,7 @@ from typing import Tuple, List
 # import gdb
 import tqdm
 
-from .utilities import Address, Offset, Buffer, ValuePredicate, AddressPredicate
+from gdb_cheats.utilities import Address, Offset, Buffer, ValuePredicate, AddressPredicate
 
 _logger = logging.getLogger("search")
 
@@ -27,7 +26,7 @@ _logger = logging.getLogger("search")
 class MemorySearchImpl(abc.ABC):
     """
     Memory search interface.
-    The class defines required APIs that exposes process memory ranges.
+    The class defines required APIs that expose process memory ranges.
     """
 
     def __init__(self, inferior):

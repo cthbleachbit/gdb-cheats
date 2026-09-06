@@ -1,7 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0
+
 """
 Manages session separation.
 
-The command line user has the default session, but can switch to a different session.
+The command line user has the default session but can switch to a different session.
+Each session has its own separate variable search history, variable definitions, and lock watchpoints.
 
 """
 import logging

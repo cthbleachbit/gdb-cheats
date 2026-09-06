@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0
+
 """
 External programs used during assembly / disassembly.
 """

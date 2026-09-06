@@ -14,8 +14,8 @@ from typing import Optional, List, Dict, Tuple, Literal, Union
 
 import gdb
 
-from .search import GdbBuiltInSearch, MemorySearchImpl, MultiProcessingSearchImpl
-from .utilities import Address, Buffer, Numeric, Offset, AddressPredicate, ValuePredicate, ConstantResolver
+from gdb_cheats.search import GdbBuiltInSearch, MemorySearchImpl, MultiProcessingSearchImpl
+from gdb_cheats.utilities import Address, Buffer, Numeric, Offset, AddressPredicate, ValuePredicate, ConstantResolver
 
 # GDB Cheats - Core types
 
@@ -623,7 +623,7 @@ class SearchSession:
     ) -> int:
         """
         Narrow search - remove candidates with non-matching values.
-        :param target_value: The value to match, or repeat last search if unspecified.
+        :param target_value: The value to match or repeat the last search if unspecified.
         :param search_impl:  Search implementation.
         :return: Number of candidates remaining.
         """
@@ -676,7 +676,7 @@ class SearchSession:
     def search_state(self) -> List[Tuple[Address, Numeric, str]]:
         """
         Return a list of current candidate addresses and their values.
-        :return: list of candidates address, their current values and hexadecimal representation.
+        :return: A list of candidate addresses, their current values, and hexadecimal representation.
         """
         if self.candidates is None:
             return []

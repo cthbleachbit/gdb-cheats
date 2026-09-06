@@ -1,3 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0
+
+"""
+Types used to represent assembly snippets.
+"""
+
 import abc
 import copy
 import enum

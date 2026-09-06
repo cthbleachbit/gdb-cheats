@@ -1,5 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0
+
 """
-Looking for assembly instructions in GDB.
+Looking for compiled blobs of assembly in GDB.
 """
 import logging
 from collections import defaultdict
@@ -8,9 +10,9 @@ from typing import Collection, Dict, Set, List, Any
 import gdb
 
 from .types import Snippet, InstrumentAction
-from ..core import SearchSession, ValueType
-from ..search import GdbBuiltInSearch
-from ..utilities import Address
+from gdb_cheats.core import SearchSession, ValueType
+from gdb_cheats.search import GdbBuiltInSearch
+from gdb_cheats.utilities import Address
 
 _logger = logging.getLogger(__name__)
 
@@ -35,6 +37,11 @@ class InstrumentationBreakpoint(gdb.Breakpoint):
 
 
 class CodeSearch:
+    """
+    Code search state.
+
+    Maintains the state of code search, including snippet addresses and instrumentation breakpoints.
+    """
 
     def __init__(self) -> None:
         # Where each snippet is found in memory
@@ -50,7 +57,8 @@ class CodeSearch:
 
     def search_code(self, snippet: Snippet) -> Collection[Address]:
         """
-        Apply the snippet to memory and return the addresses where it was found.
+        Look for the snippet and return the addresses where it was found.
+        Only segments marked with executable permissions are searched.
         """
         raw_binary: bytes = snippet.assemble()
 
