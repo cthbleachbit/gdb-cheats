@@ -26,6 +26,11 @@ def loader_entrypoint():
     logging.basicConfig(level=logging.INFO)
     _logger = logging.getLogger("loader")
 
+    _logger.info("gdb_cheats - Copyright (C) 2025-2026 cth451")
+    _logger.info(
+        "This program comes with ABSOLUTELY NO WARRANTY, makes NO ATTEMPT to hide itself from anti-cheat mechanisms. "
+        "You are responsible for any consequences attaching a debugger to a game.")
+
     try:
         # Workaround multiprocessing.spawn looking for /usr/bin/python (which is 2.7 on some systems)
         which_python = shutil.which(f"python{sys.version_info.major}.{sys.version_info.minor}")

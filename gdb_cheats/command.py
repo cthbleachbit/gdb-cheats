@@ -166,7 +166,7 @@ class CommandCheatSessionSwitch(gdb.Command):
 
         # Also do environmental setup
         # Unity games use SIGPWR, SIGXCPU, SIGUSR1, SIGUSR2 for some reason.
-        # Make sure GDB don't stop on these signals and pass them to programs unchanged instead.
+        # Make sure GDB dowsn't stop on these signals and pass them to programs unchanged instead.
         _logger.info(f"Setting signal handling behavior for certain games...")
         for signal in ["SIGPWR", "SIGXCPU", "SIGUSR1", "SIGUSR2"]:
             gdb.execute(

@@ -1,16 +1,15 @@
 # GDB cheats plugin
 
-Thanks to ridiculous double-damage enemies everywhere in Hollow Knight: Silksong and Hornet starting with 5 HP, I'm
-having serious skill issues.
+Cheat engine in the form of a gdb plugin.
 
-GDB to the rescue. Crude gdb macros to search through memory space to find where HP and all other stuff lives in the
-memory and change their values as needed.
+Written out of tilted spite, thanks to sheer difficulty progression of Hollow Knight: Silksong.
 
 ## Requirements
 
-- Works on Linux. May or may not work on macOS. Definitely not Windows.
+- Works on Linux. Untended and may or may not work on macOS. Definitely does not work on Windows.
 - GDB with python3.14+ support.
-- GCC / binutils objdump + objcopy.
+- GCC / binutils objdump + objcopy. Ensure `gcc`, `as`, `objdump` and `objcopy` are in your `PATH`. Alternatively, set
+  `GCC`, `AS`, `OBJDUMP` and `OBJCOPY` environment variables to point to the executables.
 - Python package `tqdm` for drawing progress bars.
 
 To load the plugin, install the python package and run `cheats-gdb`. This is a gdb wrapper that loads the plugin.
@@ -26,7 +25,7 @@ Uses gdb built-in `gdb.Inferior.search_memory()` to look for a byte sequence.
 
 ### `mp` - Python multiprocessing memory search
 
-Reads segments into python memory, and parallelize search across multiple subprocesses.
+Reads segments into python memory and parallelize search across multiple subprocesses.
 
 * __Pros__: More flexible. Search procedure accepts arbitrary `Callable[[bytes], bool]` predicate. This lets you search
   ranges or apply custom decision flow against potential matches. __ONLY available via python APIs.__
@@ -40,7 +39,7 @@ All commands live under `cheat` prefix and support in-debugger `help <command>`.
 
 * `switch <name>` - Switch to the given session. When `name` is omitted, switch to the default session.
 * `summarize` - Print a summary of all currently tracked information.
-* `delete` - Delete the current session. All variables, watchpoints and in-progress search will be deleted.
+* `delete` - Delete the current session. All variables, watchpoints, and in-progress search will be deleted.
 
 ### `cheat search` - Search for patterns in the memory space
 
@@ -49,26 +48,26 @@ All commands live under `cheat` prefix and support in-debugger `help <command>`.
 Currently supported data types are signed and unsigned integers of 1, 2, 4, or 8 bytes plus single/double-precision
 floating points. You may refer to the types like `u8` and `i64`. Floating points are represented by `f32` and `f64`.
 Data type specified here will apply to all future search operations. To switch data type and start over, use this
-command again with desired type.
+command again with the desired type.
 
 This will replace an existing search if there is one.
 
 #### `populate [-s gdb|mp] [-a ALIGN] [-o OFFSET] <value>` - Populate initial candidates
 
-Exhaustively look for byte sequences that represent `<value>` of user specified type in the program memory space.
+Exhaustively look for byte sequences that represent `<value>` of user-specified type in the program memory space.
 
 Use `-a ALIGN` and `-o OFFSET` to look for certain structured data. Example: `-a 4096 -o 0x21c` will only match pointers
 at offset `0x21c` past 4096B aligned pages.
 
 #### `summary [-l print_limit]` - Summarize current search status
 
-Prints current search types and candidate pointers. By default, the command only prints potential matches when there're
+Prints current search types and candidate pointers. By default, the command only prints potential matches when there are
 no more than 100 candidates. Pass `-l N` to change the limit or `-l 0` to print everything.
 
 #### `define_variable <name> [index]` - Create variable definition from search results
 
 Create a variable bookmark at one of the search results. You can then create value locks on the variable. When there's
-more than 1 candidate, you'll want to pass `index` to select one of the addresses for the variable.
+more than one candidate, you'll want to pass `index` to select one of the addresses for the variable.
 
 ### `cheat variable` - Manage variable bookmarks
 
@@ -83,25 +82,27 @@ A lock is a gdb watchpoint that denies the game from updating a certain memory l
 hardware-assisted on most platforms, though the number of hardware-assisted watchpoints supported by your CPU may vary.
 
 * `create <variable index> <value>` - Create a lock on a variable freezing it at the specified value. If there's already
-  a lock on the variable the existing lock is updated to match the value specified here.
+  a lock on the variable, the existing lock is updated to match the value specified here.
 * `enable <variable index>` - Enable a lock
 * `disable <variable index>` - Temporarily disables a lock
 * `delete <variable index>` - Destroy a lock.
 
+Note that lock watchpoints created by the cheat engine are separate and not shown under GDB `info watchpoints`.
+
 ## Python API
 
-Internally the python API offers more degrees of freedom than gdb command line. To apply more complex value filtering,
-you can instantiate a new search and operate on it directly:
+Internally, the python API offers more degrees of freedom than the GDB command line. For more complex value filtering,
+create your own Python script, instantiate a new search session, and operate on it directly:
 
 ```python
 import functools
 
-from gdb_cheats.command import get_session
+from gdb_cheats.session_management import get_or_create_session
 from gdb_cheats.core import SearchSession, ValueType, VariableDefinition
 from gdb_cheats.search import MemorySearchImpl
 from gdb_cheats.utilities import Buffer
 
-session = get_session()
+session = get_or_create_session("my_cheats")
 
 
 # Searching for a 32b floating point value smaller than 114514.125
@@ -131,4 +132,4 @@ session.variables.append(variable)
 session.variable_lock_create(variable, 1919810.5)
 ```
 
-You can load any python script either by sourcing it at gdb prompt or importing it like a module in gdb python prompt. 
+You can load any Python script either by sourcing it at gdb prompt or importing it like a module in gdb python prompt. 
