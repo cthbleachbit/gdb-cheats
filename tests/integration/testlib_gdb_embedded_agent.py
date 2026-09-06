@@ -106,8 +106,6 @@ def agent_setup():
     # Inject the directory containing the test payload into the sys search path.
     script_path = Path(ENV_PAYLOAD_SCRIPT).resolve()
     integration_test_dir = script_path.parent
-    if str(integration_test_dir) not in sys.path:
-        sys.path.insert(0, str(integration_test_dir))
 
     # Parse breakpoints
     if not ENV_BREAKPOINTS:
@@ -116,7 +114,7 @@ def agent_setup():
 
     # Load the fixture.
     try:
-        testlib_fixtures = importlib.import_module("testlib_fixtures")
+        testlib_fixtures = importlib.import_module("tests.integration.testlib_fixtures")
     except ImportError as e:
         agent_exit_with_message(AgentMessage.harness_exception(exception=e, type_="fixture_import_fail"))
 

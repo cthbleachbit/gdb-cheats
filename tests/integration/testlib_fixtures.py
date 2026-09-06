@@ -33,6 +33,11 @@ def require_programs():
         pytest.skip(f"Missing required programs {str(e)}")
 
 
+def _raise_errors(test_errors: List[str]):
+    if test_errors:
+        pytest.fail(f"Test failed. Errors: \n{'\n\n'.join(test_errors)}")
+
+
 def execute_in_gdb(inferior: str,
                    breakpoint_spec: Union[str, List[str]],
                    timeout_sec=10,
@@ -107,6 +112,9 @@ def execute_in_gdb(inferior: str,
         symbol_name = func.__name__
 
         def _run_in_gdb():
+            # Cumulative list of errors.
+            test_errors: List[str] = []
+
             with NamedTemporaryFile("r", prefix="cheats-gdb-test-", delete=False) as tmp_out:
                 # Expect the python inside will send us updates to the fifo
                 # One line per message. Each message should be one serialized JSON dictionary encoded with base64.
@@ -114,6 +122,7 @@ def execute_in_gdb(inferior: str,
                 real_inferior_env[EnvConstants.IPC_FILE_PATH] = str(tmp_out.name)
                 real_inferior_env[EnvConstants.PAYLOAD_SCRIPT_PATH] = str(test_file)
                 real_inferior_env[EnvConstants.PAYLOAD_FUNCTION_NAME] = symbol_name
+                real_inferior_env["TEST_SYS_PATH"] = base64_enc(sys.path)
 
                 gdb_command_line = [
                     "cheats-gdb",
@@ -121,6 +130,7 @@ def execute_in_gdb(inferior: str,
                     "-iex", "set pagination off",
                     "-iex", "set confirm off",
                     # Load agent
+                    "-iex", f"source {str(debugger_driver_path.parent / 'testlib_gdb_env_setup.py')}",
                     "-iex", f"source {str(debugger_driver_path)}",
                     # Sets breakpoint
                     "-ex", f"python agent_init()",
@@ -134,9 +144,6 @@ def execute_in_gdb(inferior: str,
                 gdb_proc = subprocess.Popen(gdb_command_line, env=real_inferior_env,
                                             stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
                                             text=True)
-
-                # Cumulative list of errors.
-                test_errors: List[str] = []
 
                 try:
                     gdb_proc.wait(timeout_sec)
@@ -156,26 +163,25 @@ def execute_in_gdb(inferior: str,
 
                 serialized_messages = [AgentMessage.from_dict(base64_dec(line)) for line in tmp_out.readlines()]
 
-                # Expect to see "initialized" and "payload_loaded" messages.
-                if not any(message.type_ == "initialized" for message in serialized_messages):
-                    test_errors.append("Missing `initialized` message - this run is probably invalid.")
-                if not any(message.type_ == "setup_complete" for message in serialized_messages):
-                    test_errors.append("Missing `setup_complete` message - this run is probably invalid.")
-                if not any(message.type_ == "payload_run_complete" for message in serialized_messages):
-                    test_errors.append("Missing `payload payload_run_complete` message. Run failed.")
+            # Expect to see "initialized" and "payload_loaded" messages.
+            if not any(message.type_ == "initialized" for message in serialized_messages):
+                test_errors.append("Missing `initialized` message - this run is probably invalid.")
+            if not any(message.type_ == "setup_complete" for message in serialized_messages):
+                test_errors.append("Missing `setup_complete` message - this run is probably invalid.")
+            if not any(message.type_ == "payload_run_complete" for message in serialized_messages):
+                test_errors.append("Missing `payload payload_run_complete` message. Run failed.")
 
-                # Any other messages should be failures.
-                failure_messages = [failure for failure in serialized_messages if failure.is_error()]
-                if failure_messages:
-                    for message in serialized_messages:
-                        test_errors.append(f"Test agent reported errors")
-
-                # Print the messages to stderr for reference
+            # Any other messages should be failures.
+            failure_messages = [failure for failure in serialized_messages if failure.is_error()]
+            if failure_messages:
                 for message in serialized_messages:
-                    print(f"{pprint.pformat(message.as_dict())}\n", file=sys.stderr)
+                    test_errors.append(f"Test agent reported errors")
 
-                if test_errors:
-                    pytest.fail(f"Test failed. Errors: \n{'\n\n'.join(test_errors)}")
+            # Print the messages to stderr for reference
+            for message in serialized_messages:
+                print(f"{pprint.pformat(message.as_dict())}\n", file=sys.stderr)
+
+            _raise_errors(test_errors)
 
         return _run_in_gdb
 
