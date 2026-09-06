@@ -13,6 +13,7 @@ import pytest
 
 from gdb_cheats.assembly.programs import *
 from tests.integration import testlibexec_load_and_run_test as embedded_driver
+from tests.integration.testlib_types import AgentMessage
 
 
 def get_gdb():
@@ -39,6 +40,14 @@ def execute_in_gdb(inferior: str,
     """
     Run the given function in the cheat engine with GDB attached to the given program stopped at the given breakpoint.
 
+    The wrapped test function will be reimported and executed inside GDB with a test agent.
+    The test agent accessing the test payload will have to skip this decorator and run the naked function instead,
+    so this decorator becomes no-op when the `gdb` module is available (in other words inside GDB).
+
+    The wrapped test function should accept two arguments: `gdb_cheats` and `gdb`. The test agent exposes the
+    `gdb_cheats` and `gdb` modules as arguments to the test function. Test scripts thus should not import `gdb_cheats`
+    nor `gdb` modules at the top.
+
     :param inferior: The inferior program to run.
     :param breakpoint_spec: When to stop the inferior program.
     :param timeout_sec: How long to wait for the debugger to quit.
@@ -50,6 +59,7 @@ def execute_in_gdb(inferior: str,
         # We are being loaded from inside GDB. Make this decorator a no-op.
         def _no_op_decorator(func):
             return func
+
         return _no_op_decorator
 
     require_programs()
@@ -120,29 +130,30 @@ def execute_in_gdb(inferior: str,
                 # Grab output
                 stdout, stderr = gdb_proc.communicate()
                 if gdb_proc.returncode != 0:
-                    test_errors.append(f"GDB exited with non-zero {gdb_proc.returncode}.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}")
+                    test_errors.append(
+                        f"GDB exited with non-zero {gdb_proc.returncode}.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}")
 
-
-                serialized_messages: List[Dict] = [json.loads(base64.b64decode(line)) for line in tmp_out.readlines()]
+                serialized_messages: List[AgentMessage] = [AgentMessage.from_dict(json.loads(base64.b64decode(line)))
+                                                           for line in tmp_out.readlines()]
 
                 # Expect to see "initialized" and "payload_loaded" messages.
-                if not any(message["type"] == "initialized" for message in serialized_messages):
+                if not any(message.type_ == "initialized" for message in serialized_messages):
                     test_errors.append("Missing `initialized` message - this run is probably invalid.")
-                if not any(message["type"] == "payload_run_complete" for message in serialized_messages):
+                if not any(message.type_ == "payload_run_complete" for message in serialized_messages):
                     test_errors.append("Missing `payload payload_run_complete` message. Run failed.")
 
                 # Any other messages should be failures.
-                failure_messages = [failure for failure in serialized_messages if failure["class"] != "info"]
+                failure_messages = [failure for failure in serialized_messages if failure.is_error()]
                 if failure_messages:
                     for message in serialized_messages:
-                        test_errors.append(f"Test agent report:\n{pprint.pformat(message)}")
+                        test_errors.append(f"Test agent report:\n{pprint.pformat(message.as_dict())}")
 
                 if test_errors:
                     pytest.fail(f"Test failed. Errors: \n{'\n\n'.join(test_errors)}")
 
                 # Print the messages to stderr for reference
                 for message in serialized_messages:
-                    print(f"Test agent report:\n{pprint.pformat(message)}", file=sys.stderr)
+                    print(f"Test agent report:\n{pprint.pformat(message.as_dict())}", file=sys.stderr)
 
         return _run_in_gdb
 

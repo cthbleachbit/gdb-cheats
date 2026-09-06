@@ -7,7 +7,7 @@
 import logging
 from pathlib import Path
 
-from .testlib_fixtures import execute_in_gdb
+from tests.integration.testlib_fixtures import execute_in_gdb
 
 _logger = logging.getLogger(Path(__file__).name)
 
