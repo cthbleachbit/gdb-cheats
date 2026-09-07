@@ -115,7 +115,7 @@ def execute_in_gdb(inferior: str,
             # Cumulative list of errors.
             test_errors: List[str] = []
 
-            with NamedTemporaryFile("r", prefix="cheats-gdb-test-", delete=False) as tmp_out:
+            with NamedTemporaryFile("r", prefix="cheats-gdb-test-", delete_on_close=False) as tmp_out:
                 # Expect the python inside will send us updates to the fifo
                 # One line per message. Each message should be one serialized JSON dictionary encoded with base64.
 
@@ -132,11 +132,11 @@ def execute_in_gdb(inferior: str,
                     # Load agent
                     "-iex", f"source {str(debugger_driver_path.parent / 'testlib_gdb_env_setup.py')}",
                     "-iex", f"source {str(debugger_driver_path)}",
-                    # Sets breakpoint
+                    # Load test payload, sets breakpoint, start inferior execution.
                     "-ex", f"python agent_init()",
                     "-ex", f"python agent_setup()",
                     "-ex", f"python agent_run()",
-                    # Catch all exit - should not be here.
+                    # Catch-all exit. Only reachable if the driver did not load correctly.
                     "-ex", "python raise SystemExit(1)",
                     "--args", str(inferior), *real_inferior_args
                 ]
@@ -174,8 +174,7 @@ def execute_in_gdb(inferior: str,
             # Any other messages should be failures.
             failure_messages = [failure for failure in serialized_messages if failure.is_error()]
             if failure_messages:
-                for message in serialized_messages:
-                    test_errors.append(f"Test agent reported errors")
+                test_errors.append(f"Test agent reported errors.")
 
             # Print the messages to stderr for reference
             for message in serialized_messages:
